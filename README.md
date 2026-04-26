@@ -22,7 +22,7 @@ Deploy the frontend:
 npm run deploy
 ```
 
-The UI defaults to `后端任务模式`. In production it sends backend job requests to:
+The UI defaults to `后端任务模式`. In production it sends backend job requests directly to the Node backend:
 
 ```text
 https://imagebackend.78139191.xyz
@@ -73,3 +73,5 @@ npm run backend:pm2:start
 ```
 
 Generated image base64 payloads are extracted from model responses and stored on local disk under `backend-data/assets/`. D1 stores job state, errors, events, and response metadata with image URLs pointing back to the Node backend.
+
+Cloudflare Pages is static-only for this app. The old Pages Functions, KV job queue, and R2 image storage path have been removed; the `lobechat` R2 bucket is not used by image-workbench.

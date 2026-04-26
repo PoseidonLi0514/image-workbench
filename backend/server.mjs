@@ -15,7 +15,7 @@ const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 3456);
 const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || "https://imagebackend.78139191.xyz").replace(/\/+$/, "");
 const ASSET_DIR = process.env.IMAGE_WORKBENCH_ASSET_DIR || path.resolve(__dirname, "..", "backend-data", "assets");
-const R2_PREFIX = "image-workbench/jobs";
+const ASSET_KEY_PREFIX = "image-workbench/jobs";
 const JOB_TTL_SECONDS = 60 * 60 * 24 * 7;
 const MAX_EVENTS = 200;
 const UPSTREAM_TIMEOUT_MS = Number(process.env.UPSTREAM_TIMEOUT_MS || 10 * 60 * 1000);
@@ -206,7 +206,7 @@ async function handleDeleteJob(response, id) {
 }
 
 async function handleAsset(response, key) {
-  if (!key || !key.startsWith(`${R2_PREFIX}/`)) {
+  if (!key || !key.startsWith(`${ASSET_KEY_PREFIX}/`)) {
     response.writeHead(404);
     response.end("Not found");
     return;
@@ -506,7 +506,7 @@ function hasVisibleOutput(response) {
 function hasGeneratedImage(response) {
   for (const item of response && response.output || []) {
     if (!item || typeof item !== "object") continue;
-    if (item.type === "image_generation_call" && (item.result || item.result_url || item.result_r2_key)) return true;
+    if (item.type === "image_generation_call" && (item.result || item.result_url || item.result_asset_key)) return true;
   }
   return false;
 }
@@ -528,13 +528,13 @@ async function storeResponseAssets(jobId, response) {
     imageIndex += 1;
     const format = item.output_format || "png";
     const ext = extensionFromFormat(format);
-    const key = `${R2_PREFIX}/${jobId}/${item.id || `image-${imageIndex}`}.${ext}`;
+    const key = `${ASSET_KEY_PREFIX}/${jobId}/${item.id || `image-${imageIndex}`}.${ext}`;
     const bytes = base64ToBytes(item.result);
     const filePath = assetPathForKey(key);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, bytes);
     item.result_b64_removed = true;
-    item.result_r2_key = key;
+    item.result_asset_key = key;
     item.result_url = `${PUBLIC_BASE_URL}/api/assets?key=${encodeURIComponent(key)}`;
     item.result = "";
   }
@@ -542,8 +542,12 @@ async function storeResponseAssets(jobId, response) {
 }
 
 function assetPathForKey(key) {
-  const relative = key.replace(/^image-workbench\/jobs\//, "");
+  const relative = key.replace(new RegExp(`^${escapeRegExp(ASSET_KEY_PREFIX)}/`), "");
   return path.resolve(ASSET_DIR, relative);
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function base64ToBytes(value) {
