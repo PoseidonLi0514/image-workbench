@@ -252,7 +252,7 @@ async function handleNameRequest(request, response) {
     writeJson(response, { error: "Missing backend API key for naming." }, 500);
     return;
   }
-  const endpoint = resolveEndpoint("");
+  const endpoint = resolveChatEndpoint("");
   if (!endpoint) {
     writeJson(response, { error: "Missing backend BASEURL for naming." }, 500);
     return;
@@ -270,17 +270,15 @@ async function handleNameRequest(request, response) {
       },
       body: JSON.stringify({
         model: String(payload.model || process.env.IMAGE_WORKBENCH_NAMING_MODEL || "deepseek-v4-flash").trim(),
-        input: [
+        messages: [
           {
             role: "user",
-            content: [
-              { type: "input_text", text: buildNamingPrompt(payload.kind, text) },
-            ],
+            content: buildNamingPrompt(payload.kind, text),
           },
         ],
         stream: false,
-        store: false,
-        max_output_tokens: 80,
+        temperature: 0.2,
+        max_tokens: 80,
       }),
       signal: controller.signal,
     });
@@ -290,7 +288,7 @@ async function handleNameRequest(request, response) {
       return;
     }
     const data = await upstream.json();
-    const name = cleanGeneratedName(extractResponseText(data) || data.output_text || "");
+    const name = cleanGeneratedName(extractChatCompletionText(data));
     if (!name) {
       writeJson(response, { error: "Naming response is empty." }, 502);
       return;
@@ -301,6 +299,21 @@ async function handleNameRequest(request, response) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function extractChatCompletionText(data) {
+  const choice = data && Array.isArray(data.choices) && data.choices[0];
+  const message = choice && choice.message;
+  if (!message) return "";
+  if (typeof message.content === "string") return message.content;
+  if (Array.isArray(message.content)) {
+    return message.content.map((part) => {
+      if (!part) return "";
+      if (typeof part === "string") return part;
+      return part.text || part.content || "";
+    }).join("");
+  }
+  return "";
 }
 
 function buildNamingPrompt(kind, text) {
@@ -999,12 +1012,32 @@ function resolveEndpoint(payloadEndpoint) {
     || "");
 }
 
+function resolveChatEndpoint(payloadEndpoint) {
+  const raw = String(payloadEndpoint || "").trim()
+    || process.env.BASEURL
+    || process.env.IMAGE_WORKBENCH_BASE_URL
+    || process.env.OPENAI_BASE_URL
+    || process.env.BASE_URL
+    || "";
+  return normalizeChatEndpoint(raw);
+}
+
 function normalizeEndpoint(url) {
   const raw = String(url || "").trim().replace(/\/+$/, "");
   if (!raw) return "";
   if (/\/responses$/.test(raw)) return raw;
   if (/\/v1$/.test(raw)) return `${raw}/responses`;
   return `${raw}/v1/responses`;
+}
+
+function normalizeChatEndpoint(url) {
+  const raw = String(url || "").trim().replace(/\/+$/, "");
+  if (!raw) return "";
+  if (/\/chat\/completions$/.test(raw)) return raw;
+  if (/\/v1\/responses$/.test(raw)) return raw.replace(/\/responses$/, "/chat/completions");
+  if (/\/responses$/.test(raw)) return raw.replace(/\/responses$/, "/chat/completions");
+  if (/\/v1$/.test(raw)) return `${raw}/chat/completions`;
+  return `${raw}/v1/chat/completions`;
 }
 
 async function readJsonBody(request) {
