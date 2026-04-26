@@ -22,6 +22,34 @@ const UPSTREAM_TIMEOUT_MS = Number(process.env.UPSTREAM_TIMEOUT_MS || 10 * 60 * 
 const JOB_STREAM_PING_MS = Number(process.env.JOB_STREAM_PING_MS || 10 * 1000);
 const activeJobs = new Map();
 const d1 = new D1Client();
+const SAFETY_CATEGORY_LABELS = new Map([
+  ["harassment", "骚扰"],
+  ["harassment/threatening", "威胁骚扰"],
+  ["hate", "仇恨"],
+  ["hate/threatening", "威胁仇恨"],
+  ["illicit", "违法内容"],
+  ["illicit/violent", "暴力违法"],
+  ["self-harm", "自残"],
+  ["self-harm/intent", "自残意图"],
+  ["self-harm/instructions", "自残指导"],
+  ["sexual", "性内容"],
+  ["sexual/minors", "未成年人性内容"],
+  ["violence", "暴力"],
+  ["violence/graphic", "血腥暴力"],
+]);
+const SAFETY_CATEGORY_ALIASES = new Map([
+  ["harassment-threatening", "harassment/threatening"],
+  ["hate-threatening", "hate/threatening"],
+  ["illicit-violent", "illicit/violent"],
+  ["self-harm-intent", "self-harm/intent"],
+  ["self-harm-instructions", "self-harm/instructions"],
+  ["self/harm", "self-harm"],
+  ["self/harm/intent", "self-harm/intent"],
+  ["self/harm/instructions", "self-harm/instructions"],
+  ["sexual-minors", "sexual/minors"],
+  ["violence-graphic", "violence/graphic"],
+]);
+const SAFETY_CATEGORY_KEYS = [...SAFETY_CATEGORY_LABELS.keys()].sort((a, b) => b.length - a.length);
 
 await fs.mkdir(ASSET_DIR, { recursive: true });
 
@@ -521,8 +549,8 @@ function classifyFailure(error, response = null) {
     .toLowerCase();
 
   let statusLabel = "请求失败";
-  if (code === "moderation_blocked" || /moderation_blocked|safety_violations|safety system|content_policy|policy violation/.test(haystack)) {
-    statusLabel = "安全审核拦截";
+  if (isSafetyFailure(code, haystack)) {
+    statusLabel = safetyStatusLabel(normalized);
   } else if (status === 401 || status === 403 || /unauthorized|authentication|invalid api key|incorrect api key|permission denied/.test(haystack)) {
     statusLabel = "上游鉴权失败";
   } else if (status === 429 || /rate.?limit|quota|insufficient_quota|too many requests/.test(haystack)) {
@@ -568,12 +596,103 @@ function normalizeFailureSource(source) {
       status: source.status || "",
       message: source.message || source.error || JSON.stringify(source),
       raw: JSON.stringify(source),
+      structured: source,
     };
   }
   const raw = String(source);
   const parsed = parseJson(raw, null);
   if (parsed && typeof parsed === "object") return normalizeFailureSource(parsed);
   return { message: raw, raw };
+}
+
+function isSafetyFailure(code, haystack) {
+  return code === "moderation_blocked"
+    || /moderation_blocked|safety_violations|safety system|content_policy|policy violation/.test(haystack);
+}
+
+function safetyStatusLabel(failure) {
+  const categories = extractSafetyCategories(failure);
+  if (!categories.length) return "安全审核拦截";
+  const labels = categories
+    .map((category) => SAFETY_CATEGORY_LABELS.get(category))
+    .filter(Boolean);
+  const uniqueLabels = [...new Set(labels)];
+  return uniqueLabels.length ? `安全审核拦截：${uniqueLabels.join("、")}` : "安全审核拦截";
+}
+
+function extractSafetyCategories(failure) {
+  const categories = new Set();
+  collectSafetyCategories(failure.structured, categories);
+  collectSafetyCategories(failure.raw, categories);
+  collectSafetyCategories(failure.message, categories);
+  collectSafetyCategories(failure.code, categories);
+  return compactSafetyCategories(categories);
+}
+
+function compactSafetyCategories(categories) {
+  const compacted = new Set(categories);
+  for (const category of categories) {
+    const parent = category.split("/")[0];
+    if (parent !== category && compacted.has(parent)) compacted.delete(parent);
+  }
+  return [...compacted];
+}
+
+function collectSafetyCategories(value, categories) {
+  if (!value) return;
+  if (Array.isArray(value)) {
+    for (const item of value) collectSafetyCategories(item, categories);
+    return;
+  }
+  if (typeof value === "object") {
+    for (const [key, child] of Object.entries(value)) {
+      if (child && typeof child === "object") {
+        collectSafetyCategories(child, categories);
+      } else if (isSafetyMetadataKey(key)) {
+        collectSafetyCategories(child, categories);
+      }
+    }
+    return;
+  }
+  addSafetyCategoriesFromText(String(value), categories);
+}
+
+function isSafetyMetadataKey(key) {
+  return /safety|moderation|violation|category|categories|content_filter/.test(String(key || "").toLowerCase());
+}
+
+function addSafetyCategoriesFromText(text, categories) {
+  const parsed = parseJson(text, null);
+  if (parsed && typeof parsed === "object") {
+    collectSafetyCategories(parsed, categories);
+  }
+
+  for (const match of text.matchAll(/(?:safety_violations|violations|categories)\s*[:=]\s*\[([^\]]+)\]/gi)) {
+    for (const token of match[1].split(/[,，\s]+/)) {
+      addNormalizedSafetyCategory(token, categories);
+    }
+  }
+
+  for (const category of SAFETY_CATEGORY_KEYS) {
+    const pattern = category
+      .split(/[/-]/)
+      .map(escapeRegExp)
+      .join("[\\s_\\-./]+");
+    const regex = new RegExp(`(^|[^a-z0-9])${pattern}([^a-z0-9]|$)`, "i");
+    if (regex.test(text)) categories.add(category);
+  }
+}
+
+function addNormalizedSafetyCategory(value, categories) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .replace(/^[\[{(]+|[\]})]+$/g, "")
+    .replace(/_/g, "-")
+    .replace(/\./g, "/");
+  const canonical = SAFETY_CATEGORY_ALIASES.get(normalized) || normalized;
+  if (SAFETY_CATEGORY_LABELS.has(canonical)) categories.add(canonical);
 }
 
 function formatFailureMessage(statusLabel, failure) {
