@@ -209,13 +209,13 @@ async function runJob(store, env, id, payload) {
       }
       const finalResponse = mergeStreamOutputItems(streamResult.response, streamResult.outputItems);
       const stored = await storeResponseAssets(env, id, finalResponse);
-      if (!hasExpectedOutput(requestBody, stored)) {
+      if (!hasExpectedOutput(stored)) {
         await patchJob(store, id, {
           status: "failed",
           statusLabel: "响应为空",
           response: stored,
           outputText: "",
-          error: emptyResponseError(requestBody),
+          error: emptyResponseError(),
         });
         return;
       }
@@ -231,13 +231,13 @@ async function runJob(store, env, id, payload) {
       await appendEvent(store, id, "waiting for full response body");
       const data = await response.json();
       const stored = await storeResponseAssets(env, id, data);
-      if (!hasExpectedOutput(requestBody, stored)) {
+      if (!hasExpectedOutput(stored)) {
         await patchJob(store, id, {
           status: "failed",
           statusLabel: "响应为空",
           response: stored,
           outputText: "",
-          error: emptyResponseError(requestBody),
+          error: emptyResponseError(),
         });
         return;
       }
@@ -452,20 +452,12 @@ function hasGeneratedImage(response) {
   return false;
 }
 
-function hasExpectedOutput(requestBody, response) {
-  if (expectsImageGeneration(requestBody)) return hasGeneratedImage(response);
+function hasExpectedOutput(response) {
   return hasVisibleOutput(response);
 }
 
-function expectsImageGeneration(requestBody) {
-  return Array.isArray(requestBody && requestBody.tools)
-    && requestBody.tools.some((tool) => tool && tool.type === "image_generation");
-}
-
-function emptyResponseError(requestBody) {
-  return expectsImageGeneration(requestBody)
-    ? "模型完成了请求，但没有返回图片。"
-    : "模型完成了请求，但没有返回可显示的文本或图片。";
+function emptyResponseError() {
+  return "模型完成了请求，但没有返回可显示的文本或图片。";
 }
 
 async function storeResponseAssets(env, jobId, response) {
