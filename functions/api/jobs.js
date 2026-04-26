@@ -1,6 +1,6 @@
 const JOB_TTL_SECONDS = 60 * 60 * 24 * 7;
 const MAX_EVENTS = 200;
-const UPSTREAM_TIMEOUT_MS = 4 * 60 * 1000;
+const UPSTREAM_TIMEOUT_MS = 10 * 60 * 1000;
 const R2_PREFIX = "image-workbench/jobs";
 
 export async function onRequestPost(context) {
