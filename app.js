@@ -110,6 +110,9 @@
         tabFavoriteGallery: $("tabFavoriteGallery"),
         favoriteGalleryView: $("favoriteGalleryView"),
         favoriteGallery: $("favoriteGallery"),
+        tabReferenceGallery: $("tabReferenceGallery"),
+        referenceGalleryView: $("referenceGalleryView"),
+        referenceGallery: $("referenceGallery"),
       };
 
       const state = {
@@ -376,6 +379,7 @@
         els.tabGallery.addEventListener("click", () => switchTab("gallery"));
         els.tabAllGallery.addEventListener("click", () => switchTab("allGallery"));
         els.tabFavoriteGallery.addEventListener("click", () => switchTab("favoriteGallery"));
+        els.tabReferenceGallery.addEventListener("click", () => switchTab("referenceGallery"));
 
         // Overflow menu
         els.overflowMenuBtn.addEventListener("click", (e) => {
@@ -443,12 +447,15 @@
         els.tabGallery.classList.toggle("active", tab === "gallery");
         els.tabAllGallery.classList.toggle("active", tab === "allGallery");
         els.tabFavoriteGallery.classList.toggle("active", tab === "favoriteGallery");
+        els.tabReferenceGallery.classList.toggle("active", tab === "referenceGallery");
         els.outputArea.classList.toggle("hidden", tab !== "chat");
         els.galleryView.classList.toggle("hidden", tab !== "gallery");
         els.allGalleryView.classList.toggle("hidden", tab !== "allGallery");
         els.favoriteGalleryView.classList.toggle("hidden", tab !== "favoriteGallery");
+        els.referenceGalleryView.classList.toggle("hidden", tab !== "referenceGallery");
         if (tab === "allGallery") renderAllGallery();
         if (tab === "favoriteGallery") renderFavoriteGallery();
+        if (tab === "referenceGallery") renderReferenceGallery();
       }
 
       function restoreSettings() {
@@ -621,7 +628,7 @@
       function renderSessions() {
         els.sessionList.innerHTML = "";
         state.sessions.forEach((session) => {
-          const imageCount = state.gallery.filter((image) => image.sessionId === session.id).length;
+          const imageCount = state.gallery.filter((image) => isGeneratedImage(image) && image.sessionId === session.id).length;
           const turnCount = state.turns.filter((turn) => turn.sessionId === session.id).length;
           const sessionRun = state.runStates[session.id];
           const running = sessionRun && sessionRun.isRunning;
@@ -658,7 +665,7 @@
         if (!title) return;
         session.title = title.slice(0, 80);
         session.updatedAt = Date.now();
-        if (!state.gallery.some((image) => image.sessionId === id)) {
+        if (!state.gallery.some((image) => isGeneratedImage(image) && image.sessionId === id)) {
           session.folderName = buildSessionFolderName(session);
         }
         saveSessions();
@@ -670,8 +677,9 @@
         const session = state.sessions.find((entry) => entry.id === id);
         if (!session) return;
         const images = state.gallery.filter((image) => image.sessionId === id);
+        const generatedCount = images.filter(isGeneratedImage).length;
         const turns = state.turns.filter((turn) => turn.sessionId === id);
-        if (!confirm(`删除 "${session.title || "Session"}"、${turns.length} 轮对话和其中 ${images.length} 张本地图片？`)) return;
+        if (!confirm(`删除 "${session.title || "Session"}"、${turns.length} 轮对话和其中 ${generatedCount} 张本地图片？`)) return;
 
         state.sessions = state.sessions.filter((entry) => entry.id !== id);
         if (!state.sessions.length) state.sessions = [createSession("Session 1")];
@@ -1004,6 +1012,20 @@
             createdAt: Date.now(),
             sourceKind: "input",
           }));
+          const savedReference = findSavedReferenceForAttachment(item);
+          const saveBtn = document.createElement("button");
+          saveBtn.type = "button";
+          saveBtn.className = "reference-save-btn";
+          saveBtn.dataset.referenceSaveFor = item.id;
+          saveBtn.title = savedReference ? "取消保存参考图" : "保存参考图";
+          saveBtn.setAttribute("aria-label", saveBtn.title);
+          saveBtn.setAttribute("aria-pressed", savedReference ? "true" : "false");
+          saveBtn.innerHTML = `<svg><use href="${savedReference ? "#i-check-square" : "#i-square"}"></use></svg>`;
+          saveBtn.classList.toggle("active", Boolean(savedReference));
+          saveBtn.addEventListener("click", (event) => {
+            event.stopPropagation();
+            toggleReferenceSaved(item.id).catch((error) => toast(String(error.message || error), "error"));
+          });
           if (item.maskDataUrl) {
             const badge = document.createElement("span");
             badge.className = "mask-badge";
@@ -1030,7 +1052,7 @@
             iconButton("#i-arrow-down", "下移", () => moveAttachment(item.id, 1)),
             iconButton("#i-image", "绘制 mask", () => openMaskEditor(item.id)),
           );
-          wrap.append(img, btn, tools);
+          wrap.append(img, saveBtn, btn, tools);
           els.attachments.append(wrap);
         });
       }
@@ -1947,6 +1969,8 @@
           name: `image-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`,
           dataUrl,
           mime,
+          kind: "generated",
+          sourceKind: "generated",
           prompt: image.prompt || run.currentPrompt || "",
           revisedPrompt: image.revisedPrompt || "",
           size: image.size || "",
@@ -1966,6 +1990,7 @@
         await saveImage(entry);
         renderCurrentImages(sessionId);
         renderGallery();
+        renderAllGallery();
         renderFavoriteGallery();
         renderSessions();
         await saveImageToDirectory(entry, true);
@@ -1987,7 +2012,7 @@
 
       function renderGallery() {
         els.gallery.innerHTML = "";
-        const sessionImages = state.gallery.filter((image) => image.sessionId === state.activeSessionId);
+        const sessionImages = state.gallery.filter((image) => isGeneratedImage(image) && image.sessionId === state.activeSessionId);
         if (!sessionImages.length) {
           els.gallery.innerHTML = '<div class="empty">本地图库为空</div>';
         } else {
@@ -1998,17 +2023,18 @@
 
       function renderAllGallery() {
         els.allGallery.innerHTML = "";
-        if (!state.gallery.length) {
+        const images = state.gallery.filter(isGeneratedImage);
+        if (!images.length) {
           els.allGallery.innerHTML = '<div class="empty">还没有生成过图片</div>';
           return;
         }
-        state.gallery.forEach((image) => els.allGallery.append(createImageCard(image)));
+        images.forEach((image) => els.allGallery.append(createImageCard(image)));
       }
 
       function renderFavoriteGallery() {
         els.favoriteGallery.innerHTML = "";
         const favorites = state.gallery
-          .filter((image) => image.favorite)
+          .filter((image) => isGeneratedImage(image) && image.favorite)
           .sort((a, b) => (b.favoriteAt || b.createdAt || 0) - (a.favoriteAt || a.createdAt || 0));
         if (!favorites.length) {
           els.favoriteGallery.innerHTML = '<div class="empty">还没有收藏图片</div>';
@@ -2017,10 +2043,23 @@
         favorites.forEach((image) => els.favoriteGallery.append(createImageCard(image)));
       }
 
+      function renderReferenceGallery() {
+        els.referenceGallery.innerHTML = "";
+        const references = state.gallery
+          .filter(isReferenceImage)
+          .sort((a, b) => (b.savedAt || b.createdAt || 0) - (a.savedAt || a.createdAt || 0));
+        if (!references.length) {
+          els.referenceGallery.innerHTML = '<div class="empty">还没有保存参考图</div>';
+          return;
+        }
+        references.forEach((image) => els.referenceGallery.append(createImageCard(image)));
+      }
+
       function createImageCard(image) {
         const card = document.createElement("article");
         card.className = "image-card";
         card.dataset.imageId = image.id;
+        card.classList.toggle("reference-card", isReferenceImage(image));
 
         const img = document.createElement("img");
         img.className = "image-thumb";
@@ -2028,19 +2067,22 @@
         img.alt = image.revisedPrompt || image.prompt || image.name;
         img.addEventListener("click", () => openImageModal(image));
 
-        const favoriteBtn = document.createElement("button");
-        favoriteBtn.type = "button";
-        favoriteBtn.className = "favorite-btn";
-        favoriteBtn.dataset.favoriteFor = image.id;
-        favoriteBtn.title = image.favorite ? "取消收藏" : "收藏";
-        favoriteBtn.setAttribute("aria-label", favoriteBtn.title);
-        favoriteBtn.setAttribute("aria-pressed", image.favorite ? "true" : "false");
-        favoriteBtn.innerHTML = '<svg><use href="#i-star"></use></svg>';
-        favoriteBtn.classList.toggle("active", Boolean(image.favorite));
-        favoriteBtn.addEventListener("click", (event) => {
-          event.stopPropagation();
-          toggleFavorite(image.id, card);
-        });
+        let favoriteBtn = null;
+        if (isGeneratedImage(image)) {
+          favoriteBtn = document.createElement("button");
+          favoriteBtn.type = "button";
+          favoriteBtn.className = "favorite-btn";
+          favoriteBtn.dataset.favoriteFor = image.id;
+          favoriteBtn.title = image.favorite ? "取消收藏" : "收藏";
+          favoriteBtn.setAttribute("aria-label", favoriteBtn.title);
+          favoriteBtn.setAttribute("aria-pressed", image.favorite ? "true" : "false");
+          favoriteBtn.innerHTML = '<svg><use href="#i-star"></use></svg>';
+          favoriteBtn.classList.toggle("active", Boolean(image.favorite));
+          favoriteBtn.addEventListener("click", (event) => {
+            event.stopPropagation();
+            toggleFavorite(image.id, card);
+          });
+        }
 
         const info = document.createElement("div");
         info.className = "image-info";
@@ -2051,7 +2093,10 @@
 
         const meta = document.createElement("div");
         meta.className = "meta";
-        [image.model, image.size, image.quality].filter(Boolean).forEach((value) => {
+        const metaValues = isReferenceImage(image)
+          ? ["参考图", image.mime || image.type, `${(image.byteSize || dataUrlByteLength(image.dataUrl)).toLocaleString()} bytes`]
+          : [image.model, image.size, image.quality];
+        metaValues.filter(Boolean).forEach((value) => {
           const chip = document.createElement("span");
           chip.className = "chip";
           chip.textContent = value;
@@ -2068,7 +2113,9 @@
         );
 
         info.append(title, meta, actions);
-        card.append(img, favoriteBtn, info);
+        card.append(img);
+        if (favoriteBtn) card.append(favoriteBtn);
+        card.append(info);
         return card;
       }
 
@@ -2144,14 +2191,84 @@
         return String(value).replace(/["\\]/g, "\\$&");
       }
 
+      function isReferenceImage(image) {
+        return Boolean(image && (image.kind === "reference" || image.sourceKind === "reference"));
+      }
+
+      function isGeneratedImage(image) {
+        return !isReferenceImage(image);
+      }
+
+      function findSavedReferenceForAttachment(item) {
+        if (!item || !item.dataUrl) return null;
+        const byId = item.savedReferenceId
+          ? state.gallery.find((image) => image.id === item.savedReferenceId && isReferenceImage(image))
+          : null;
+        if (byId) return byId;
+        const byData = state.gallery.find((image) => isReferenceImage(image) && image.dataUrl === item.dataUrl);
+        if (byData) item.savedReferenceId = byData.id;
+        return byData || null;
+      }
+
+      async function toggleReferenceSaved(attachmentId) {
+        const item = state.attachments.find((entry) => entry.id === attachmentId);
+        if (!item || !item.dataUrl) return;
+        const existing = findSavedReferenceForAttachment(item);
+        if (existing) {
+          clearReferenceIdFromAttachments(existing.id);
+          await deleteImage(existing.id, { silent: true });
+          renderAttachments();
+          toast("已取消保存参考图");
+          return;
+        }
+
+        const entry = {
+          id: uid("ref"),
+          kind: "reference",
+          sourceKind: "reference",
+          name: item.name || `reference-${new Date().toISOString().replace(/[:.]/g, "-")}.${extensionFromMime(item.type)}`,
+          dataUrl: item.dataUrl,
+          mime: item.type || "image/png",
+          byteSize: item.size || dataUrlByteLength(item.dataUrl),
+          prompt: "",
+          revisedPrompt: "",
+          size: "",
+          quality: "",
+          background: "",
+          model: "",
+          sessionId: "",
+          sourceSessionId: state.activeSessionId,
+          turnId: "",
+          favorite: false,
+          favoriteAt: 0,
+          savedAt: Date.now(),
+          createdAt: Date.now(),
+        };
+        item.savedReferenceId = entry.id;
+        state.gallery.unshift(entry);
+        await saveImage(entry);
+        renderAttachments();
+        renderReferenceGallery();
+        renderGallery();
+        renderAllGallery();
+        renderFavoriteGallery();
+        toast("参考图已保存");
+      }
+
+      function clearReferenceIdFromAttachments(referenceId) {
+        state.attachments.forEach((item) => {
+          if (item.savedReferenceId === referenceId) item.savedReferenceId = "";
+        });
+      }
+
       function openImageModal(image) {
         state.modalImage = image;
         els.modalImage.src = image.dataUrl;
         els.modalImage.alt = image.revisedPrompt || image.prompt || image.name;
         els.modalTitle.textContent = image.name || "Image";
         els.modalMeta.innerHTML = "";
-        const values = image.sourceKind === "input"
-          ? [image.mime, `${dataUrlByteLength(image.dataUrl).toLocaleString()} bytes`]
+        const values = image.sourceKind === "input" || isReferenceImage(image)
+          ? [image.mime, `${(image.byteSize || dataUrlByteLength(image.dataUrl)).toLocaleString()} bytes`, isReferenceImage(image) ? new Date(image.createdAt).toLocaleString() : ""]
           : [
             image.model,
             image.size,
@@ -2177,6 +2294,7 @@
           type: image.mime || "image/png",
           size: dataUrlByteLength(image.dataUrl),
           dataUrl: image.dataUrl,
+          savedReferenceId: isReferenceImage(image) ? image.id : "",
         }];
         state.mode = "edit";
         updateMode();
@@ -2248,7 +2366,7 @@
           await writable.write(blob);
           await writable.close();
           if (writeMetadata) {
-            const images = state.gallery.filter((entry) => entry.sessionId === image.sessionId);
+            const images = state.gallery.filter((entry) => isGeneratedImage(entry) && entry.sessionId === image.sessionId);
             await writeTextFileToDirectory(dir, "metadata.json", JSON.stringify(buildSessionMetadata(images), null, 2));
           }
           updateSaveDirStatus(`已写入 ${dir.name}/${image.name}`);
@@ -2362,7 +2480,7 @@
       }
 
       function currentSessionImages() {
-        return state.gallery.filter((image) => image.sessionId === state.activeSessionId);
+        return state.gallery.filter((image) => isGeneratedImage(image) && image.sessionId === state.activeSessionId);
       }
 
       function currentSessionTurns() {
@@ -2377,6 +2495,7 @@
           size: item.size || 0,
           dataUrl: item.dataUrl || "",
           maskDataUrl: item.maskDataUrl || "",
+          savedReferenceId: item.savedReferenceId || "",
         }));
       }
 
@@ -2616,7 +2735,10 @@
         if (!confirm("清空本地图库？")) return;
         state.gallery = [];
         renderGallery();
+        renderAllGallery();
         renderFavoriteGallery();
+        renderReferenceGallery();
+        renderAttachments();
         renderSessions();
         renderSessionHistory();
         if (state.db) {
@@ -2625,18 +2747,24 @@
         toast("图库已清空");
       }
 
-      async function deleteImage(id) {
+      async function deleteImage(id, options = {}) {
+        const image = state.gallery.find((entry) => entry.id === id);
         state.gallery = state.gallery.filter((image) => image.id !== id);
+        if (image && isReferenceImage(image)) clearReferenceIdFromAttachments(id);
         const run = activeRun();
         run.currentImages = run.currentImages.filter((image) => image.id !== id);
         renderGallery();
+        renderAllGallery();
         renderFavoriteGallery();
+        renderReferenceGallery();
+        renderAttachments();
         if (run.currentRunEl && run.currentRunEl.isConnected) renderCurrentImages();
         else renderSessionHistory();
         renderSessions();
         if (state.db) {
           await txDone(state.db.transaction("images", "readwrite").objectStore("images").delete(id));
         }
+        if (!options.silent && image && isReferenceImage(image)) toast("参考图已删除");
       }
 
       function syncActiveRunControls() {
@@ -2786,6 +2914,15 @@
         if (clean === "svg") return "image/svg+xml";
         if (clean === "webp") return "image/webp";
         return `image/${clean || "png"}`;
+      }
+
+      function extensionFromMime(mime) {
+        const clean = String(mime || "image/png").toLowerCase();
+        if (clean.includes("jpeg") || clean.includes("jpg")) return "jpg";
+        if (clean.includes("webp")) return "webp";
+        if (clean.includes("gif")) return "gif";
+        if (clean.includes("svg")) return "svg";
+        return "png";
       }
 
       function fileToDataUrl(file, onProgress) {
@@ -3007,15 +3144,24 @@
         const store = tx.objectStore("images");
         const images = await requestToPromise(store.getAll());
         const fallbackSession = state.sessions[state.sessions.length - 1] || getActiveSession();
-        state.gallery = images.map((image) => ({
-          ...image,
-          sessionId: image.sessionId || (fallbackSession && fallbackSession.id) || state.activeSessionId,
-          favorite: Boolean(image.favorite),
-          favoriteAt: image.favoriteAt || 0,
-        })).sort((a, b) => b.createdAt - a.createdAt);
+        state.gallery = images.map((image) => {
+          const reference = isReferenceImage(image);
+          return {
+            ...image,
+            kind: reference ? "reference" : (image.kind || "generated"),
+            sourceKind: reference ? "reference" : (image.sourceKind || "generated"),
+            sessionId: reference ? (image.sessionId || "") : (image.sessionId || (fallbackSession && fallbackSession.id) || state.activeSessionId),
+            favorite: reference ? false : Boolean(image.favorite),
+            favoriteAt: reference ? 0 : (image.favoriteAt || 0),
+            savedAt: image.savedAt || image.createdAt || 0,
+            byteSize: image.byteSize || 0,
+          };
+        }).sort((a, b) => b.createdAt - a.createdAt);
         renderSessions();
         renderGallery();
+        renderAllGallery();
         renderFavoriteGallery();
+        renderReferenceGallery();
         renderSessionHistory();
         resumeBackendJobs();
       }
@@ -3089,7 +3235,7 @@
         run.currentPrompt = turn.userPrompt || "";
         run.currentAttachments = snapshotAttachments(turn.attachments || []);
         run.currentText = turn.assistantText || "";
-        run.currentImages = state.gallery.filter((image) => image.turnId === turn.id);
+        run.currentImages = state.gallery.filter((image) => isGeneratedImage(image) && image.turnId === turn.id);
         run.seenImageIds = new Set(run.currentImages.map((image) => image.source && image.source.id).filter(Boolean));
         run.backendJobId = turn.backendJobId || "";
         run.currentRunEl = els.outputArea.querySelector(`.assistant-msg[data-turn-id="${cssEscape(turn.id)}"]`);

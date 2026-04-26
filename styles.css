@@ -600,6 +600,25 @@ details.sidebar-section[open] > summary.sidebar-section-title::before {
   cursor: pointer;
   font-size: 10px;
 }
+.attachment > button.reference-save-btn {
+  left: 3px;
+  right: auto;
+  border-radius: 5px;
+  background: rgba(29,29,31,.58);
+  transition: background .16s, color .16s, transform .16s var(--spring);
+}
+.attachment > button.reference-save-btn:hover {
+  transform: scale(1.06);
+  background: rgba(29,29,31,.74);
+}
+.attachment > button.reference-save-btn.active {
+  background: rgba(52,199,89,.92);
+  color: #fff;
+}
+.attachment > button.reference-save-btn svg {
+  width: 15px;
+  height: 15px;
+}
 .attachment-tools {
   position: absolute;
   bottom: 0; left: 0; right: 0;
@@ -636,6 +655,7 @@ details.sidebar-section[open] > summary.sidebar-section-title::before {
   font-weight: 600;
   line-height: 18px;
 }
+.attachment .mask-badge { top: 28px; }
 
 .composer-input-row {
   display: flex;

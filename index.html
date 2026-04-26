@@ -6,7 +6,7 @@
   <title>Image Workbench</title>
   <link rel="icon" type="image/png" href="./assets/logo.png">
   <link rel="apple-touch-icon" href="./assets/logo.png">
-  <link rel="stylesheet" href="./styles.css?v=20260426-6">
+  <link rel="stylesheet" href="./styles.css?v=20260426-7">
 </head>
 <body>
   <svg aria-hidden="true" class="hidden">
@@ -70,6 +70,12 @@
     </symbol>
     <symbol id="i-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 2.8l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.6l-5.8 3.1 1.1-6.5-4.7-4.6 6.5-.9L12 2.8z"></path>
+    </symbol>
+    <symbol id="i-square" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+    </symbol>
+    <symbol id="i-check-square" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="M8 12l3 3 5-6"></path>
     </symbol>
   </svg>
 
@@ -198,6 +204,7 @@
           <button id="tabGallery" type="button">图库 <span id="galleryMeta"></span></button>
           <button id="tabAllGallery" type="button">全部图库</button>
           <button id="tabFavoriteGallery" type="button">收藏图库</button>
+          <button id="tabReferenceGallery" type="button">参考图</button>
         </div>
         <div class="chat-scroll" id="outputArea">
           <div class="empty">发送消息开始生成图片</div>
@@ -210,6 +217,9 @@
         </div>
         <div class="gallery-view hidden" id="favoriteGalleryView">
           <div class="gallery" id="favoriteGallery"></div>
+        </div>
+        <div class="gallery-view hidden" id="referenceGalleryView">
+          <div class="gallery" id="referenceGallery"></div>
         </div>
         <div class="composer-bar">
           <div class="composer-bar-inner">
@@ -329,6 +339,6 @@
   </dialog>
 
   <div class="toast" id="toast"></div>
-  <script src="./app.js?v=20260426-6" defer></script>
+  <script src="./app.js?v=20260426-7" defer></script>
 </body>
 </html>
