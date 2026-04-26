@@ -60,6 +60,6 @@ Deploy to Cloudflare Pages to enable backend jobs:
 
 The UI defaults to backend mode. If API URL and API Key are left blank, requests use the server-provided `BASEURL` and `APIKEY`. If either field is filled in the browser, that value overrides the server variable for that request and is saved in the current browser by default.
 
-When the UI's `后端任务模式` checkbox is enabled in settings, requests are submitted to `/api/jobs`. The backend stores task status and lightweight response metadata in KV, so refreshing the page can recover the latest active job for the current session.
+When the UI's `后端任务模式` checkbox is enabled in settings, requests are submitted to `/api/jobs?wait=1`. The Pages Function keeps that request open until the model request finishes, stores task status and lightweight response metadata in KV, and returns the completed job to the browser. The plain `/api/jobs` endpoint is still available for compatibility, but long image generations should not rely on detached `waitUntil()` background work.
 
 Generated image base64 payloads are extracted from the model response and stored in R2 under `image-workbench/jobs/...`. KV keeps only R2 keys and `/api/assets?key=...` URLs for those images.

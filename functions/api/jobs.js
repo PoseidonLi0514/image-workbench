@@ -1,6 +1,8 @@
 const JOB_TTL_SECONDS = 60 * 60 * 24 * 7;
 const MAX_EVENTS = 200;
 const UPSTREAM_TIMEOUT_MS = 10 * 60 * 1000;
+const JOB_HEARTBEAT_MS = 15 * 1000;
+const JOB_STALE_MS = 90 * 1000;
 const R2_PREFIX = "image-workbench/jobs";
 
 export async function onRequestPost(context) {
@@ -33,6 +35,12 @@ export async function onRequestPost(context) {
   };
 
   await putJob(store, job);
+  if (shouldWaitForJob(context.request)) {
+    await runJob(store, context.env, id, payload);
+    const completedJob = await normalizeJobForRead(store, await getJob(store, id));
+    return json(completedJob || job);
+  }
+
   context.waitUntil(runJob(store, context.env, id, payload));
   return json({ id, status: job.status, statusLabel: job.statusLabel, createdAt: job.createdAt });
 }
@@ -44,7 +52,7 @@ export async function onRequestGet(context) {
   const list = await store.list({ prefix: "job:", limit: 50 });
   const jobs = [];
   for (const key of list.keys) {
-    const job = await getJob(store, key.name.slice(4));
+    const job = await normalizeJobForRead(store, await getJob(store, key.name.slice(4)));
     if (job) {
       jobs.push({
         id: job.id,
@@ -84,6 +92,7 @@ async function runJob(store, env, id, payload) {
   }
 
   const upstreamTimeout = createTimeout(UPSTREAM_TIMEOUT_MS);
+  const heartbeat = startJobHeartbeat(store, id);
   try {
     await patchJob(store, id, { status: "running", statusLabel: "正在提交模型请求" });
     const requestBody = { ...payload.request };
@@ -172,6 +181,16 @@ async function runJob(store, env, id, payload) {
     });
   } finally {
     upstreamTimeout.cancel();
+    heartbeat.cancel();
+  }
+}
+
+function shouldWaitForJob(request) {
+  try {
+    const value = new URL(request.url).searchParams.get("wait");
+    return value === "1" || value === "true";
+  } catch {
+    return false;
   }
 }
 
@@ -444,6 +463,39 @@ function getJobStore(env) {
 
 async function getJob(store, id) {
   return store.get(`job:${id}`, "json");
+}
+
+async function normalizeJobForRead(store, job) {
+  if (!isStaleActiveJob(job)) return job;
+  const failed = {
+    ...job,
+    status: "failed",
+    statusLabel: "后台任务已中断",
+    error: "后台任务长时间没有心跳，可能已被运行环境取消。请重新发送请求。",
+  };
+  await putJob(store, failed);
+  return failed;
+}
+
+function isStaleActiveJob(job) {
+  if (!job || (job.status !== "queued" && job.status !== "running")) return false;
+  const updatedAt = Date.parse(job.updatedAt || job.createdAt || "");
+  return Number.isFinite(updatedAt) && Date.now() - updatedAt > JOB_STALE_MS;
+}
+
+function startJobHeartbeat(store, id) {
+  const timer = setInterval(() => {
+    touchActiveJob(store, id).catch(() => {});
+  }, JOB_HEARTBEAT_MS);
+  return {
+    cancel: () => clearInterval(timer),
+  };
+}
+
+async function touchActiveJob(store, id) {
+  const current = await getJob(store, id);
+  if (!current || (current.status !== "queued" && current.status !== "running")) return;
+  await putJob(store, current);
 }
 
 async function putJob(store, job) {

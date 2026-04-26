@@ -1450,8 +1450,9 @@
 
       async function submitBackendJob({ endpoint, apiKey, body, sessionId, started }) {
         const run = getRunState(sessionId);
-        appendEvent("POST /api/jobs", sessionId);
-        const response = await fetch("./api/jobs", {
+        appendEvent("POST /api/jobs?wait=1", sessionId);
+        setStatus("后端任务运行中，等待模型返回", sessionId);
+        const response = await fetch("./api/jobs?wait=1", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ endpoint, apiKey, request: body }),
@@ -1463,15 +1464,16 @@
           throw new Error(text || `Job HTTP ${response.status}`);
         }
         const job = await response.json();
+        if (!job || !job.id) throw new Error("后端任务没有返回任务 ID");
         run.backendJobId = job.id;
         updateActiveTurn(sessionId, {
           backendJobId: job.id,
           backendResultHandled: false,
-          status: "后端任务已创建",
+          status: job.statusLabel || "后端任务已创建",
           updatedAt: Date.now(),
         }, true);
-        setStatus("后端任务已创建，正在等待结果", sessionId);
-        await pollBackendJob(job.id, sessionId, started);
+        const settled = await applyBackendJobUpdate(job, sessionId, started);
+        if (!settled) await pollBackendJob(job.id, sessionId, started);
       }
 
       async function pollBackendJob(jobId, sessionId, started = performance.now()) {
@@ -1485,41 +1487,47 @@
             throw new Error(text || `Job HTTP ${response.status}`);
           }
           const job = await response.json();
-          if (job.outputText) replaceText(job.outputText, sessionId);
-          if (job.status === "completed") {
-            if (job.response) {
-              await handleFinalResponse(job.response, true, sessionId);
-            }
-            const seconds = ((performance.now() - started) / 1000).toFixed(1);
-            updateActiveTurn(sessionId, {
-              backendResultHandled: true,
-              status: `完成，用时 ${seconds}s`,
-              updatedAt: Date.now(),
-            }, true);
-            setStatus(`完成，用时 ${seconds}s`, sessionId);
-            run.backendJobId = "";
-            setRunning(false, sessionId);
-            run.controller = null;
-            return;
-          }
-          if (job.status === "failed" || job.status === "canceled") {
-            const statusLabel = job.status === "canceled" ? "已停止" : (job.statusLabel || "请求失败");
-            const message = cleanErrorMessage(job.error || (job.status === "canceled" ? "任务已取消" : statusLabel));
-            run.backendJobId = "";
-            updateActiveTurn(sessionId, {
-              backendJobId: "",
-              backendResultHandled: true,
-              status: statusLabel,
-              updatedAt: Date.now(),
-            }, true);
-            setStatus(statusLabel, sessionId);
-            const error = new Error(message);
-            error.statusLabel = statusLabel;
-            throw error;
-          }
-          setStatus(job.statusLabel || "后端生成中", sessionId);
+          if (await applyBackendJobUpdate(job, sessionId, started)) return;
           await sleep(1500);
         }
+      }
+
+      async function applyBackendJobUpdate(job, sessionId, started) {
+        const run = getRunState(sessionId);
+        if (job.outputText) replaceText(job.outputText, sessionId);
+        if (job.status === "completed") {
+          if (job.response) {
+            await handleFinalResponse(job.response, true, sessionId);
+          }
+          const seconds = ((performance.now() - started) / 1000).toFixed(1);
+          updateActiveTurn(sessionId, {
+            backendResultHandled: true,
+            status: `完成，用时 ${seconds}s`,
+            updatedAt: Date.now(),
+          }, true);
+          setStatus(`完成，用时 ${seconds}s`, sessionId);
+          run.backendJobId = "";
+          setRunning(false, sessionId);
+          run.controller = null;
+          return true;
+        }
+        if (job.status === "failed" || job.status === "canceled") {
+          const statusLabel = job.status === "canceled" ? "已停止" : (job.statusLabel || "请求失败");
+          const message = cleanErrorMessage(job.error || (job.status === "canceled" ? "任务已取消" : statusLabel));
+          run.backendJobId = "";
+          updateActiveTurn(sessionId, {
+            backendJobId: "",
+            backendResultHandled: true,
+            status: statusLabel,
+            updatedAt: Date.now(),
+          }, true);
+          setStatus(statusLabel, sessionId);
+          const error = new Error(message);
+          error.statusLabel = statusLabel;
+          throw error;
+        }
+        setStatus(job.statusLabel || "后端生成中", sessionId);
+        return false;
       }
 
       function sleep(ms) {
