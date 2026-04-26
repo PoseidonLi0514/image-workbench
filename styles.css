@@ -301,7 +301,8 @@ details.sidebar-section[open] > summary.sidebar-section-title::before {
 .session-actions .btn { width: 28px; height: 28px; padding: 0; border-radius: var(--radius-sm); }
 
 .session-title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.session-sub { color: var(--subtle); font-size: 11px; display: flex; gap: 6px; }
+.session-sub { color: var(--subtle); font-size: 11px; display: flex; gap: 6px; flex-wrap: wrap; }
+.session-running { color: var(--brand); font-weight: 700; }
 
 /* ── Chat Main ── */
 .chat-main {

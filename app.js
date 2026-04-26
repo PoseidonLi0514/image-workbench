@@ -573,6 +573,18 @@
         updateSaveDirStatus();
       }
 
+      function switchSession(id) {
+        if (!state.sessions.some((session) => session.id === id)) return;
+        state.activeSessionId = id;
+        saveSessions();
+        renderSessions();
+        renderGallery();
+        renderSessionHistory();
+        attachActivePendingJob();
+        syncActiveRunControls();
+        updateSaveDirStatus();
+      }
+
       function touchActiveSession(prompt) {
         const session = getActiveSession();
         if (!session) return;
@@ -595,6 +607,8 @@
         state.sessions.forEach((session) => {
           const imageCount = state.gallery.filter((image) => image.sessionId === session.id).length;
           const turnCount = state.turns.filter((turn) => turn.sessionId === session.id).length;
+          const sessionRun = state.runStates[session.id];
+          const running = sessionRun && sessionRun.isRunning;
           const row = document.createElement("div");
           row.className = `session-row ${session.id === state.activeSessionId ? "active" : ""}`;
           const btn = document.createElement("button");
@@ -602,21 +616,11 @@
           btn.className = "session-item";
           btn.innerHTML = [
             `<span class="session-title">${escapeHtml(session.title || "Session")}</span>`,
-            `<span class="session-sub"><span>${turnCount} turns</span><span>${imageCount} images</span><span>${new Date(session.updatedAt).toLocaleDateString()}</span></span>`,
+            `<span class="session-sub">${running ? '<span class="session-running">running</span>' : ""}<span>${turnCount} turns</span><span>${imageCount} images</span><span>${formatShortDateTime(session.updatedAt)}</span></span>`,
           ].join("");
           btn.addEventListener("click", () => {
             if (state.activeSessionId === session.id) return;
-            state.activeSessionId = session.id;
-            saveSessions();
-            const run = activeRun();
-            els.sendBtn.disabled = run.isRunning;
-            els.abortBtn.disabled = !run.isRunning;
-            els.meter.classList.toggle("on", run.isRunning);
-            els.statusText.textContent = run.lastStatus || "就绪";
-            renderSessions();
-            renderGallery();
-            renderSessionHistory();
-            updateSaveDirStatus();
+            switchSession(session.id);
           });
           const actions = document.createElement("div");
           actions.className = "session-actions";
@@ -690,12 +694,17 @@
         const turns = currentSessionTurns().slice().sort((a, b) => a.createdAt - b.createdAt);
         const images = currentSessionImages().slice().sort((a, b) => a.createdAt - b.createdAt);
         const run = activeRun();
+        const wasRunning = run.isRunning;
+        const runningTurnId = run.currentTurnId;
         run.currentRunEl = null;
-        run.currentImages = [];
-        run.currentText = "";
-        run.currentPrompt = "";
-        run.currentAttachments = [];
-        run.seenImageIds = new Set();
+        if (!wasRunning) {
+          run.currentImages = [];
+          run.currentText = "";
+          run.currentPrompt = "";
+          run.currentAttachments = [];
+          run.currentTurnId = "";
+          run.seenImageIds = new Set();
+        }
         els.outputArea.innerHTML = "";
         if (!turns.length && !images.length) {
           els.outputArea.innerHTML = '<div class="empty">当前 Session 还没有历史</div>';
@@ -709,20 +718,31 @@
         });
 
         const orphanImages = images.filter((image) => !image.turnId || !renderedTurnIds.has(image.turnId));
-        if (!orphanImages.length) return;
-
-        const groups = new Map();
-        orphanImages.forEach((image) => {
-          const key = image.turnId || image.id;
-          if (!groups.has(key)) groups.set(key, []);
-          groups.get(key).push(image);
-        });
-        for (const group of groups.values()) {
-          renderOrphanImageGroup(group);
+        if (orphanImages.length) {
+          const groups = new Map();
+          orphanImages.forEach((image) => {
+            const key = image.turnId || image.id;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(image);
+          });
+          for (const group of groups.values()) {
+            renderOrphanImageGroup(group);
+          }
+        }
+        if (wasRunning) {
+          const liveTurn = turns.find((turn) => turn.id === runningTurnId)
+            || turns.find((turn) => turn.backendJobId && !turn.backendResultHandled);
+          if (liveTurn) {
+            prepareRunForTurn(liveTurn);
+            updateMessageStatus(run.lastStatus || liveTurn.status || "后端生成中", true, liveTurn.sessionId);
+          }
         }
       }
 
       function renderSavedTurn(turn, images) {
+        const run = getRunState(turn.sessionId);
+        const live = (run.isRunning && run.currentTurnId === turn.id) || (turn.backendJobId && !turn.backendResultHandled);
+        const statusText = turn.status || formatShortDateTime(turn.updatedAt || turn.createdAt);
         const user = document.createElement("div");
         user.className = "message user-msg";
         user.dataset.turnId = turn.id;
@@ -743,7 +763,18 @@
         wrap.innerHTML = [
           '<div class="message-head">',
           '<span>assistant</span>',
-          `<span>${escapeHtml(turn.status || new Date(turn.updatedAt || turn.createdAt).toLocaleString())}${images.length ? ` · ${images.length} image${images.length === 1 ? "" : "s"}` : ""}</span>`,
+          live
+            ? [
+              '<span class="assistant-meta">',
+              '<span class="message-status" data-message-status>',
+              '<span class="spinner"></span>',
+              `<span data-status-label>${escapeHtml(statusText)}</span>`,
+              '<span class="elapsed" data-elapsed></span>',
+              '</span>',
+              `<span data-image-count>${images.length ? `${images.length} image${images.length === 1 ? "" : "s"}` : ""}</span>`,
+              '</span>',
+            ].join("")
+            : `<span>${escapeHtml(statusText)} · ${escapeHtml(formatShortDateTime(turn.updatedAt || turn.createdAt))}${images.length ? ` · ${images.length} image${images.length === 1 ? "" : "s"}` : ""}</span>`,
           '</div>',
           '<div class="message-body">',
           `<div class="text-output">${escapeHtml(turn.assistantText || "")}</div>`,
@@ -1411,6 +1442,12 @@
         return new Promise((resolve) => setTimeout(resolve, ms));
       }
 
+      function pollingStartFromTimestamp(startedAt) {
+        const timestamp = Number(startedAt) || 0;
+        if (!timestamp) return performance.now();
+        return performance.now() - Math.max(0, Date.now() - timestamp);
+      }
+
       function cleanErrorMessage(error) {
         return String(error || "")
           .replace(/^Error:\s*/, "")
@@ -1571,12 +1608,14 @@
 
       function ensureMessage(sessionId) {
         const run = getRunState(sessionId);
-        if (run.currentRunEl && run.currentRunEl.isConnected) return;
+        if (sessionId && sessionId !== state.activeSessionId) return false;
+        if (run.currentRunEl && run.currentRunEl.isConnected) return true;
         if (run.currentTurnId) {
           appendLiveTurnDom(run.currentPrompt, run.currentAttachments, run.currentText, sessionId);
-          return;
+          return true;
         }
         startFrontendTurn(els.prompt.value.trim(), state.attachments, sessionId);
+        return true;
       }
 
       function startFrontendTurn(prompt, attachments, sessionId) {
@@ -1604,6 +1643,7 @@
       }
 
       function appendLiveTurnDom(prompt, attachments, assistantText, sessionId) {
+        if (sessionId && sessionId !== state.activeSessionId) return;
         const run = getRunState(sessionId);
         if (els.outputArea.querySelector(".empty")) els.outputArea.innerHTML = "";
 
@@ -1651,7 +1691,7 @@
 
       function showPartialImage(data, sessionId) {
         const run = getRunState(sessionId);
-        ensureMessage(sessionId);
+        if (!ensureMessage(sessionId)) return;
         let img = run.currentRunEl.querySelector('[data-partial="true"] img');
         if (!img) {
           const grid = run.currentRunEl.querySelector(".gallery");
@@ -1723,7 +1763,7 @@
 
       function renderCurrentImages(sessionId) {
         const run = getRunState(sessionId);
-        ensureMessage(sessionId);
+        if (!ensureMessage(sessionId)) return;
         const partial = run.currentRunEl.querySelector('[data-partial="true"]');
         if (partial) partial.remove();
         const grid = run.currentRunEl.querySelector(".gallery");
@@ -2319,6 +2359,16 @@
         return sanitizeFileName(`${stamp}-${title}-${idTail}`);
       }
 
+      function formatShortDateTime(value) {
+        const time = Number(value) || Date.now();
+        return new Date(time).toLocaleString([], {
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      }
+
       async function copyText(text) {
         if (!text) return;
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -2378,7 +2428,15 @@
         }
       }
 
-      function setRunning(running, sessionId) {
+      function syncActiveRunControls() {
+        const run = activeRun();
+        els.sendBtn.disabled = run.isRunning;
+        els.abortBtn.disabled = !run.isRunning;
+        els.meter.classList.toggle("on", run.isRunning);
+        els.statusText.textContent = run.lastStatus || "就绪";
+      }
+
+      function setRunning(running, sessionId, startedAt) {
         const run = getRunState(sessionId);
         run.isRunning = running;
         const isActive = !sessionId || sessionId === state.activeSessionId;
@@ -2388,7 +2446,7 @@
           els.meter.classList.toggle("on", running);
         }
         if (running) {
-          run.runStartedAt = performance.now();
+          run.runStartedAt = performanceStartFromTimestamp(startedAt);
           if (run.runTimer) clearInterval(run.runTimer);
           run.runTimer = setInterval(() => updateElapsedStatus(sessionId), 500);
           updateMessageStatus(run.lastStatus || "正在生成", true, sessionId);
@@ -2400,6 +2458,13 @@
           updateMessageStatus(run.lastStatus || "完成", false, sessionId);
           updateActiveTurn(sessionId, { status: run.lastStatus || "完成", updatedAt: Date.now() }, true);
         }
+        renderSessions();
+      }
+
+      function performanceStartFromTimestamp(startedAt) {
+        const timestamp = Number(startedAt) || 0;
+        if (!timestamp) return performance.now();
+        return performance.now() - Math.max(0, Date.now() - timestamp);
       }
 
       function setStatus(text, sessionId) {
@@ -2743,16 +2808,52 @@
 
       function resumeBackendJobs() {
         if (!els.backendMode.checked) return;
+        const pendingBySession = new Map();
+        state.turns
+          .filter((entry) => entry.backendJobId && !entry.backendResultHandled)
+          .sort((a, b) => b.updatedAt - a.updatedAt)
+          .forEach((turn) => {
+            if (!pendingBySession.has(turn.sessionId)) pendingBySession.set(turn.sessionId, turn);
+          });
+        for (const turn of pendingBySession.values()) {
+          const run = getRunState(turn.sessionId);
+          if (run.isRunning && run.backendJobId === turn.backendJobId) continue;
+          prepareRunForTurn(turn);
+          setRunning(true, turn.sessionId, turn.createdAt);
+          setStatus("正在恢复后端任务", turn.sessionId);
+          pollBackendJob(turn.backendJobId, turn.sessionId, pollingStartFromTimestamp(turn.createdAt)).catch((error) => {
+            const failedRun = getRunState(turn.sessionId);
+            failedRun.backendJobId = "";
+            updateActiveTurn(turn.sessionId, {
+              backendJobId: "",
+              backendResultHandled: true,
+              status: "请求失败",
+              updatedAt: Date.now(),
+            }, true);
+            setStatus("请求失败", turn.sessionId);
+            appendEvent(String(error.stack || error.message || error), turn.sessionId);
+            toast(cleanErrorMessage(error.message || error), "error");
+            setRunning(false, turn.sessionId);
+          });
+        }
+        syncActiveRunControls();
+        renderSessions();
+      }
+
+      function attachActivePendingJob() {
+        if (!els.backendMode.checked) return;
+        const run = activeRun();
+        if (run.isRunning) return;
         const turn = state.turns
           .filter((entry) => entry.sessionId === state.activeSessionId && entry.backendJobId && !entry.backendResultHandled)
           .sort((a, b) => b.updatedAt - a.updatedAt)[0];
         if (!turn) return;
         prepareRunForTurn(turn);
-        setRunning(true, turn.sessionId);
+        setRunning(true, turn.sessionId, turn.createdAt);
         setStatus("正在恢复后端任务", turn.sessionId);
-        pollBackendJob(turn.backendJobId, turn.sessionId).catch((error) => {
-          const run = getRunState(turn.sessionId);
-          run.backendJobId = "";
+        pollBackendJob(turn.backendJobId, turn.sessionId, pollingStartFromTimestamp(turn.createdAt)).catch((error) => {
+          const failedRun = getRunState(turn.sessionId);
+          failedRun.backendJobId = "";
           updateActiveTurn(turn.sessionId, {
             backendJobId: "",
             backendResultHandled: true,
