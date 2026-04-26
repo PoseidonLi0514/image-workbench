@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Image Workbench</title>
+  <link rel="icon" type="image/png" href="./assets/logo.png">
+  <link rel="apple-touch-icon" href="./assets/logo.png">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -78,7 +80,7 @@
         <button class="sidebar-toggle" id="sidebarToggle" type="button" title="切换侧边栏">
           <svg><use href="#i-sidebar"></use></svg>
         </button>
-        <div class="brand-mark"><svg><use href="#i-spark"></use></svg></div>
+        <div class="brand-mark"><img src="./assets/logo.png" alt=""></div>
         <h1>Image Workbench</h1>
       </div>
       <div class="top-actions">
@@ -170,21 +172,18 @@
           <details class="sidebar-section">
             <summary class="sidebar-section-title">连接</summary>
             <div class="stack">
+              <div class="meta">留空使用服务器提供的 APIKEY 和 BASEURL；填写后使用你自己的并保存到浏览器。</div>
               <div class="field">
                 <label for="apiUrl">API URL</label>
-                <input id="apiUrl" autocomplete="off" spellcheck="false" value="https://api.xdedm.top">
+                <input id="apiUrl" autocomplete="off" spellcheck="false" placeholder="留空使用服务器提供的 BASEURL">
               </div>
               <div class="field">
                 <label for="apiKey">API Key</label>
-                <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-...">
+                <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="留空使用服务器提供的 APIKEY">
               </div>
               <label class="check">
-                <input id="rememberKey" type="checkbox">
-                <span>记住 key</span>
-              </label>
-              <label class="check">
-                <input id="backendMode" type="checkbox">
-                <span>后端任务模式</span>
+                <input id="rememberKey" type="checkbox" checked>
+                <span>在浏览器保存我的 URL / Key</span>
               </label>
               <div class="meta" id="saveDirStatus"><span class="chip">未选择保存目录</span></div>
             </div>
@@ -267,6 +266,7 @@
           <label class="check"><input id="storeResponse" type="checkbox"><span>store: true</span></label>
           <label class="check"><input id="preservePrompt" type="checkbox" checked><span>保持 prompt 原样</span></label>
           <label class="check"><input id="transparentMode" type="checkbox"><span>透明模式</span></label>
+          <label class="check"><input id="backendMode" type="checkbox" checked><span>后端任务模式</span></label>
         </div>
         <div class="transparent-row hidden" id="transparentControls">
           <div class="field"><label for="keyColor">Key color</label><input id="keyColor" type="color" value="#00ff00"></div>

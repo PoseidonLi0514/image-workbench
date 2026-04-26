@@ -224,15 +224,16 @@
             try {
               const settings = JSON.parse(localStorage.getItem("imageWorkbench.settings") || "{}");
               delete settings.apiKey;
+              delete settings.apiUrl;
               settings.rememberKey = false;
               localStorage.setItem("imageWorkbench.settings", JSON.stringify(settings));
             } catch {
               localStorage.removeItem("imageWorkbench.settings");
             }
-            toast("已停止保存 key");
+            toast("已停止保存连接信息");
           } else {
             saveSettings();
-            toast("已保存 key 到当前浏览器");
+            toast("已保存连接信息到当前浏览器");
           }
         });
         els.apiKey.addEventListener("input", () => {
@@ -441,8 +442,10 @@
             if (els[id].type === "checkbox") els[id].checked = Boolean(settings[id]);
             else els[id].value = settings[id];
           });
-          els.rememberKey.checked = Boolean(settings.rememberKey);
-          if (settings.rememberKey && settings.apiKey) {
+          if (settings.apiUrl === "https://api.xdedm.top") els.apiUrl.value = "";
+          if (settings.backendModeDefaultVersion !== 1) els.backendMode.checked = true;
+          els.rememberKey.checked = settings.rememberKey !== false;
+          if (els.rememberKey.checked && settings.apiKey) {
             els.apiKey.value = settings.apiKey;
           }
         } catch {
@@ -457,8 +460,11 @@
           settings[id] = els[id].type === "checkbox" ? els[id].checked : els[id].value;
         });
         settings.rememberKey = els.rememberKey.checked;
+        settings.backendModeDefaultVersion = 1;
         if (els.rememberKey.checked) {
           settings.apiKey = els.apiKey.value;
+        } else {
+          delete settings.apiUrl;
         }
         localStorage.setItem("imageWorkbench.settings", JSON.stringify(settings));
       }
@@ -1225,13 +1231,19 @@
           els.apiKey.focus();
           return;
         }
+        const rawUrl = els.apiUrl.value.trim();
+        if (!useBackend && !rawUrl) {
+          toast("缺少 API URL", "error");
+          els.apiUrl.focus();
+          return;
+        }
         const sessionId = state.activeSessionId;
         const run = getRunState(sessionId);
         if (run.isRunning) {
           toast("该 Session 正在生成中", "error");
           return;
         }
-        const endpoint = normalizeEndpoint(els.apiUrl.value);
+        const endpoint = rawUrl ? normalizeEndpoint(rawUrl) : "";
         const promptText = els.prompt.value.trim();
         const body = buildRequestBody();
         run.controller = new AbortController();
@@ -1247,7 +1259,7 @@
         els.rawResponse.textContent = "";
         els.runMeta.innerHTML = "";
         run.eventCount = 0;
-        appendEvent(`POST ${endpoint}`, sessionId);
+        appendEvent(`POST ${endpoint || "server default endpoint"}`, sessionId);
         appendEvent(JSON.stringify(maskRequestForLog(body), null, 2), sessionId);
 
         try {

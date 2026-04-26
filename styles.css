@@ -84,9 +84,16 @@ button { border: 0; cursor: pointer; }
   width: 32px; height: 32px;
   display: grid; place-items: center;
   border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, #0a84ff, #5ac8fa);
-  color: #fff;
+  background: transparent;
+  overflow: hidden;
   flex: 0 0 auto;
+}
+
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 .brand h1 { margin: 0; font-size: 16px; line-height: 1.1; font-weight: 700; }

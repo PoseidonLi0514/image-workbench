@@ -36,13 +36,15 @@ Deploy to Cloudflare Pages to enable backend jobs:
    preview_bucket_name = "lobechat"
    ```
 
-5. Set a backend API key in Cloudflare:
+5. Set backend API environment variables in Cloudflare:
 
    ```bash
-   npx wrangler pages secret put IMAGE_WORKBENCH_API_KEY --project-name image-workbench
+   npx wrangler pages secret put APIKEY --project-name image-workbench
+   npx wrangler pages secret put BASEURL --project-name image-workbench
    ```
 
-   `OPENAI_API_KEY` also works as a fallback variable name.
+   `IMAGE_WORKBENCH_API_KEY` or `OPENAI_API_KEY` also work as fallback key variable names.
+   `IMAGE_WORKBENCH_BASE_URL`, `OPENAI_BASE_URL`, or `BASE_URL` also work as fallback base URL variable names.
 
 6. Run locally through Pages Functions:
 
@@ -56,6 +58,8 @@ Deploy to Cloudflare Pages to enable backend jobs:
    npm run deploy
    ```
 
-When the UI's `后端任务模式` checkbox is enabled, requests are submitted to `/api/jobs`. The backend stores task status and lightweight response metadata in KV, so refreshing the page can recover the latest active job for the current session.
+The UI defaults to backend mode. If API URL and API Key are left blank, requests use the server-provided `BASEURL` and `APIKEY`. If either field is filled in the browser, that value overrides the server variable for that request and is saved in the current browser by default.
+
+When the UI's `后端任务模式` checkbox is enabled in settings, requests are submitted to `/api/jobs`. The backend stores task status and lightweight response metadata in KV, so refreshing the page can recover the latest active job for the current session.
 
 Generated image base64 payloads are extracted from the model response and stored in R2 under `image-workbench/jobs/...`. KV keeps only R2 keys and `/api/assets?key=...` URLs for those images.

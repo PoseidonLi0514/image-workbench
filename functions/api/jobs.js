@@ -13,8 +13,8 @@ export async function onRequestPost(context) {
     return json({ error: "Invalid JSON body" }, 400);
   }
 
-  if (!payload || !payload.endpoint || !payload.request) {
-    return json({ error: "endpoint and request are required" }, 400);
+  if (!payload || !payload.request) {
+    return json({ error: "request is required" }, 400);
   }
 
   const id = crypto.randomUUID();
@@ -59,12 +59,25 @@ export async function onRequestGet(context) {
 }
 
 async function runJob(store, env, id, payload) {
-  const apiKey = env.IMAGE_WORKBENCH_API_KEY || env.OPENAI_API_KEY || payload.apiKey;
+  const apiKey = String(payload.apiKey || "").trim()
+    || env.APIKEY
+    || env.IMAGE_WORKBENCH_API_KEY
+    || env.OPENAI_API_KEY;
   if (!apiKey) {
     await patchJob(store, id, {
       status: "failed",
       statusLabel: "缺少后端 API Key",
-      error: "Set IMAGE_WORKBENCH_API_KEY or OPENAI_API_KEY in Cloudflare environment variables.",
+      error: "Set APIKEY, IMAGE_WORKBENCH_API_KEY, or OPENAI_API_KEY in Cloudflare environment variables.",
+    });
+    return;
+  }
+
+  const endpoint = resolveEndpoint(env, payload.endpoint);
+  if (!endpoint) {
+    await patchJob(store, id, {
+      status: "failed",
+      statusLabel: "缺少后端 BASEURL",
+      error: "Set BASEURL, IMAGE_WORKBENCH_BASE_URL, OPENAI_BASE_URL, or BASE_URL in Cloudflare environment variables.",
     });
     return;
   }
@@ -72,7 +85,8 @@ async function runJob(store, env, id, payload) {
   try {
     await patchJob(store, id, { status: "running", statusLabel: "正在提交模型请求" });
     const requestBody = payload.request;
-    const response = await fetch(payload.endpoint, {
+    await appendEvent(store, id, `POST ${endpoint}`);
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -109,6 +123,23 @@ async function runJob(store, env, id, payload) {
       error: String(error && (error.stack || error.message) || error),
     });
   }
+}
+
+function resolveEndpoint(env, payloadEndpoint) {
+  return normalizeEndpoint(String(payloadEndpoint || "").trim()
+    || env.BASEURL
+    || env.IMAGE_WORKBENCH_BASE_URL
+    || env.OPENAI_BASE_URL
+    || env.BASE_URL
+    || "");
+}
+
+function normalizeEndpoint(url) {
+  const raw = String(url || "").trim().replace(/\/+$/, "");
+  if (!raw) return "";
+  if (/\/responses$/.test(raw)) return raw;
+  if (/\/v1$/.test(raw)) return `${raw}/responses`;
+  return `${raw}/v1/responses`;
 }
 
 async function readSse(store, env, id, response) {
