@@ -6,7 +6,7 @@
   <title>Image Workbench</title>
   <link rel="icon" type="image/png" href="./assets/logo.png">
   <link rel="apple-touch-icon" href="./assets/logo.png">
-  <link rel="stylesheet" href="./styles.css?v=20260427-4">
+  <link rel="stylesheet" href="./styles.css?v=20260427-5">
 </head>
 <body>
   <svg aria-hidden="true" class="hidden">
@@ -316,7 +316,9 @@
   <dialog id="imageDialog">
     <div class="modal-head"><h3 class="modal-title" id="modalTitle">Image</h3><button class="btn icon" id="closeModalBtn" type="button" title="关闭"><svg><use href="#i-x"></use></svg></button></div>
     <div class="modal-body">
-      <img class="modal-image" id="modalImage" alt="">
+      <div class="modal-image-stage" id="modalImageStage">
+        <img class="modal-image" id="modalImage" alt="">
+      </div>
       <aside class="modal-side">
         <div class="button-row">
           <button class="btn" id="modalCopyBtn" type="button"><svg><use href="#i-copy"></use></svg><span>复制</span></button>
@@ -364,6 +366,6 @@
   </dialog>
 
   <div class="toast" id="toast"></div>
-  <script src="./app.js?v=20260427-4" defer></script>
+  <script src="./app.js?v=20260427-5" defer></script>
 </body>
 </html>

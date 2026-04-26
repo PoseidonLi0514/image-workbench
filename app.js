@@ -72,6 +72,7 @@
         sessionList: $("sessionList"),
         imageDialog: $("imageDialog"),
         modalTitle: $("modalTitle"),
+        modalImageStage: $("modalImageStage"),
         modalImage: $("modalImage"),
         modalMeta: $("modalMeta"),
         modalPrompt: $("modalPrompt"),
@@ -139,6 +140,17 @@
         saveDirHandle: null,
         db: null,
         modalImage: null,
+        modalZoom: {
+          scale: 1,
+          x: 0,
+          y: 0,
+          dragging: false,
+          pointerId: null,
+          dragStartX: 0,
+          dragStartY: 0,
+          startX: 0,
+          startY: 0,
+        },
         maskAttachmentId: "",
         maskMode: "draw",
         maskDrawing: false,
@@ -390,6 +402,7 @@
         els.closeJsonBtn.addEventListener("click", () => els.jsonDialog.close());
         els.importJsonBtn.addEventListener("click", importJson);
         bindMaskEvents();
+        bindModalZoomEvents();
 
         // Params drawer
         els.paramsToggleBtn.addEventListener("click", () => toggleParamsDrawer());
@@ -2633,6 +2646,7 @@
         state.modalImage = image;
         els.modalImage.src = image.dataUrl;
         els.modalImage.alt = image.revisedPrompt || image.prompt || image.name;
+        resetModalZoom();
         els.modalTitle.textContent = image.name || "Image";
         els.modalMeta.innerHTML = "";
         const values = image.sourceKind === "input" || isReferenceImage(image)
@@ -2653,6 +2667,102 @@
         els.modalPrompt.textContent = image.revisedPrompt || image.prompt || "";
         els.modalUseBtn.disabled = image.sourceKind === "input";
         els.imageDialog.showModal();
+        requestAnimationFrame(resetModalZoom);
+      }
+
+      function bindModalZoomEvents() {
+        const stage = els.modalImageStage;
+        stage.addEventListener("wheel", (event) => {
+          if (!state.modalImage) return;
+          event.preventDefault();
+          const zoom = state.modalZoom;
+          const previousScale = zoom.scale;
+          const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+          const nextScale = clamp(previousScale * factor, 1, 8);
+          if (nextScale === previousScale) return;
+
+          const rect = stage.getBoundingClientRect();
+          const pointerX = event.clientX - rect.left - rect.width / 2;
+          const pointerY = event.clientY - rect.top - rect.height / 2;
+          zoom.x = pointerX - (pointerX - zoom.x) * (nextScale / previousScale);
+          zoom.y = pointerY - (pointerY - zoom.y) * (nextScale / previousScale);
+          zoom.scale = nextScale;
+          applyModalZoom();
+          clampModalPan();
+          applyModalZoom();
+        }, { passive: false });
+
+        stage.addEventListener("pointerdown", (event) => {
+          if (!state.modalImage || state.modalZoom.scale <= 1) return;
+          event.preventDefault();
+          const zoom = state.modalZoom;
+          zoom.dragging = true;
+          zoom.pointerId = event.pointerId;
+          zoom.dragStartX = event.clientX;
+          zoom.dragStartY = event.clientY;
+          zoom.startX = zoom.x;
+          zoom.startY = zoom.y;
+          stage.setPointerCapture(event.pointerId);
+          stage.classList.add("dragging");
+        });
+
+        stage.addEventListener("pointermove", (event) => {
+          const zoom = state.modalZoom;
+          if (!zoom.dragging || zoom.pointerId !== event.pointerId) return;
+          zoom.x = zoom.startX + event.clientX - zoom.dragStartX;
+          zoom.y = zoom.startY + event.clientY - zoom.dragStartY;
+          clampModalPan();
+          applyModalZoom();
+        });
+
+        const stopDrag = (event) => {
+          const zoom = state.modalZoom;
+          if (!zoom.dragging || zoom.pointerId !== event.pointerId) return;
+          zoom.dragging = false;
+          zoom.pointerId = null;
+          stage.classList.remove("dragging");
+          if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId);
+        };
+        stage.addEventListener("pointerup", stopDrag);
+        stage.addEventListener("pointercancel", stopDrag);
+        stage.addEventListener("dblclick", resetModalZoom);
+      }
+
+      function resetModalZoom() {
+        Object.assign(state.modalZoom, {
+          scale: 1,
+          x: 0,
+          y: 0,
+          dragging: false,
+          pointerId: null,
+          dragStartX: 0,
+          dragStartY: 0,
+          startX: 0,
+          startY: 0,
+        });
+        els.modalImageStage.classList.remove("dragging");
+        applyModalZoom();
+      }
+
+      function applyModalZoom() {
+        const zoom = state.modalZoom;
+        els.modalImage.style.transform = `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`;
+        els.modalImageStage.classList.toggle("zoomed", zoom.scale > 1);
+      }
+
+      function clampModalPan() {
+        const zoom = state.modalZoom;
+        if (zoom.scale <= 1) {
+          zoom.x = 0;
+          zoom.y = 0;
+          return;
+        }
+        const stageRect = els.modalImageStage.getBoundingClientRect();
+        const imageRect = els.modalImage.getBoundingClientRect();
+        const overflowX = Math.max(0, (imageRect.width - stageRect.width) / 2);
+        const overflowY = Math.max(0, (imageRect.height - stageRect.height) / 2);
+        zoom.x = clamp(zoom.x, -overflowX, overflowX);
+        zoom.y = clamp(zoom.y, -overflowY, overflowY);
       }
 
       async function useImageAsInput(image) {
