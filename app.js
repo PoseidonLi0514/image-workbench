@@ -2820,7 +2820,7 @@
           if (run.isRunning && run.backendJobId === turn.backendJobId) continue;
           prepareRunForTurn(turn);
           setRunning(true, turn.sessionId, turn.createdAt);
-          setStatus("正在恢复后端任务", turn.sessionId);
+          setStatus("后端生成中", turn.sessionId);
           pollBackendJob(turn.backendJobId, turn.sessionId, pollingStartFromTimestamp(turn.createdAt)).catch((error) => {
             const failedRun = getRunState(turn.sessionId);
             failedRun.backendJobId = "";
@@ -2850,7 +2850,7 @@
         if (!turn) return;
         prepareRunForTurn(turn);
         setRunning(true, turn.sessionId, turn.createdAt);
-        setStatus("正在恢复后端任务", turn.sessionId);
+        setStatus("后端生成中", turn.sessionId);
         pollBackendJob(turn.backendJobId, turn.sessionId, pollingStartFromTimestamp(turn.createdAt)).catch((error) => {
           const failedRun = getRunState(turn.sessionId);
           failedRun.backendJobId = "";
