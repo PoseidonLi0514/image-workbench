@@ -809,9 +809,12 @@
           const btn = document.createElement("button");
           btn.type = "button";
           btn.className = "session-item";
+          const runningLabel = running
+            ? `<span class="session-running">running <span data-session-elapsed="${escapeHtml(session.id)}">${escapeHtml(formatRunElapsed(sessionRun))}</span></span>`
+            : "";
           btn.innerHTML = [
             `<span class="session-title">${escapeHtml(session.title || "Session")}</span>`,
-            `<span class="session-sub">${running ? '<span class="session-running">running</span>' : ""}<span>${turnCount} turns</span><span>${imageCount} images</span><span>${formatShortDateTime(session.updatedAt)}</span></span>`,
+            `<span class="session-sub">${runningLabel}<span>${turnCount} turns</span><span>${imageCount} images</span><span>${formatShortDateTime(session.updatedAt)}</span></span>`,
           ].join("");
           btn.addEventListener("click", () => {
             if (state.activeSessionId === session.id) return;
@@ -3206,6 +3209,7 @@
       function updateElapsedStatus(sessionId) {
         const run = getRunState(sessionId);
         updateMessageStatus(run.lastStatus, run.isRunning, sessionId);
+        updateSessionElapsed(sessionId);
       }
 
       function updateMessageStatus(text, running, sessionId) {
@@ -3219,6 +3223,17 @@
         status.classList.toggle("done", !running);
         if (label) label.textContent = text || (running ? "正在生成" : "完成");
         if (elapsed) elapsed.textContent = running ? `(${seconds}s)` : seconds ? `(${seconds}s)` : "";
+      }
+
+      function updateSessionElapsed(sessionId) {
+        const run = getRunState(sessionId);
+        const elapsed = els.sessionList.querySelector(`[data-session-elapsed="${cssEscape(sessionId || state.activeSessionId)}"]`);
+        if (elapsed) elapsed.textContent = formatRunElapsed(run);
+      }
+
+      function formatRunElapsed(run) {
+        const seconds = run && run.runStartedAt ? Math.max(0, Math.floor((performance.now() - run.runStartedAt) / 1000)) : 0;
+        return `(${seconds}s)`;
       }
 
       function updateRunMeta(response) {
