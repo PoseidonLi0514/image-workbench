@@ -1446,9 +1446,10 @@
           if (text) appendText(text, sessionId);
           return;
         }
-        if (item.type === "image_generation_call" && item.result) {
+        if (item.type === "image_generation_call" && (item.result || item.result_url)) {
           await addGeneratedImage({
             b64: item.result,
+            dataUrl: item.result_url || "",
             mime: mimeFromFormat(item.output_format),
             ext: item.output_format || "png",
             prompt: els.prompt.value.trim(),
@@ -1473,9 +1474,10 @@
             const text = extractTextFromMessage(item);
             if (text) result.text += (result.text ? "\n" : "") + text;
           }
-          if (item.type === "image_generation_call" && item.result) {
+          if (item.type === "image_generation_call" && (item.result || item.result_url)) {
             result.images.push({
               b64: item.result,
+              dataUrl: item.result_url || "",
               mime: mimeFromFormat(item.output_format),
               ext: item.output_format || "png",
               prompt: els.prompt.value.trim(),

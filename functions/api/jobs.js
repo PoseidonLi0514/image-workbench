@@ -1,5 +1,6 @@
 const JOB_TTL_SECONDS = 60 * 60 * 24 * 7;
 const MAX_EVENTS = 200;
+const R2_PREFIX = "image-workbench/jobs";
 
 export async function onRequestPost(context) {
   const store = getJobStore(context.env);
@@ -89,15 +90,16 @@ async function runJob(store, env, id, payload) {
 
     const contentType = response.headers.get("content-type") || "";
     if (requestBody.stream && response.body && !contentType.includes("application/json")) {
-      await readSse(store, id, response);
+      await readSse(store, env, id, response);
     } else {
       await patchJob(store, id, { statusLabel: "等待完整响应" });
       const data = await response.json();
+      const stored = await storeResponseAssets(env, id, data);
       await patchJob(store, id, {
         status: "completed",
         statusLabel: "完成",
-        response: data,
-        outputText: extractResponseText(data),
+        response: stored,
+        outputText: extractResponseText(stored),
       });
     }
   } catch (error) {
@@ -109,7 +111,7 @@ async function runJob(store, env, id, payload) {
   }
 }
 
-async function readSse(store, id, response) {
+async function readSse(store, env, id, response) {
   await patchJob(store, id, { statusLabel: "正在接收事件流" });
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -121,13 +123,13 @@ async function readSse(store, id, response) {
     const parts = buffer.split(/\r?\n\r?\n/);
     buffer = parts.pop() || "";
     for (const part of parts) {
-      await handleSseBlock(store, id, part);
+      await handleSseBlock(store, env, id, part);
     }
   }
-  if (buffer.trim()) await handleSseBlock(store, id, buffer);
+  if (buffer.trim()) await handleSseBlock(store, env, id, buffer);
 }
 
-async function handleSseBlock(store, id, block) {
+async function handleSseBlock(store, env, id, block) {
   let eventName = "";
   const dataLines = [];
   for (const line of block.split(/\r?\n/)) {
@@ -163,11 +165,12 @@ async function handleSseBlock(store, id, block) {
   } else if (type === "response.image_generation_call.partial_image") {
     await patchJob(store, id, { statusLabel: "正在生成图片" });
   } else if (type === "response.completed" && data.response) {
+    const stored = await storeResponseAssets(env, id, data.response);
     await patchJob(store, id, {
       status: "completed",
       statusLabel: "完成",
-      response: data.response,
-      outputText: extractResponseText(data.response),
+      response: stored,
+      outputText: extractResponseText(stored),
     });
   } else if ((type === "response.failed" || type === "response.incomplete") && data.response) {
     await patchJob(store, id, {
@@ -192,6 +195,71 @@ function extractResponseText(response) {
     }
   }
   return chunks.join("");
+}
+
+async function storeResponseAssets(env, jobId, response) {
+  if (!response || typeof response !== "object") return response;
+  const bucket = env && env.IMAGE_WORKBENCH_R2;
+  if (!bucket) return stripInlineImageResults(response);
+
+  const copy = JSON.parse(JSON.stringify(response));
+  let imageIndex = 0;
+  for (const item of copy.output || []) {
+    if (!item || item.type !== "image_generation_call" || typeof item.result !== "string" || !item.result) continue;
+    imageIndex += 1;
+    const format = item.output_format || "png";
+    const mime = mimeFromFormat(format);
+    const ext = extensionFromFormat(format);
+    const key = `${R2_PREFIX}/${jobId}/${item.id || `image-${imageIndex}`}.${ext}`;
+    const bytes = base64ToBytes(item.result);
+    await bucket.put(key, bytes, {
+      httpMetadata: { contentType: mime },
+      customMetadata: {
+        jobId,
+        outputItemId: String(item.id || ""),
+        prompt: String(item.revised_prompt || "").slice(0, 1024),
+      },
+    });
+    item.result_b64_removed = true;
+    item.result_r2_key = key;
+    item.result_url = `/api/assets?key=${encodeURIComponent(key)}`;
+    item.result = "";
+  }
+  return copy;
+}
+
+function stripInlineImageResults(response) {
+  const copy = JSON.parse(JSON.stringify(response));
+  for (const item of copy.output || []) {
+    if (item && item.type === "image_generation_call" && typeof item.result === "string" && item.result) {
+      item.result_b64_removed = true;
+      item.result = "";
+    }
+  }
+  return copy;
+}
+
+function base64ToBytes(value) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function mimeFromFormat(format) {
+  const clean = String(format || "png").toLowerCase();
+  if (clean === "jpg" || clean === "jpeg") return "image/jpeg";
+  if (clean === "webp") return "image/webp";
+  return "image/png";
+}
+
+function extensionFromFormat(format) {
+  const clean = String(format || "png").toLowerCase();
+  if (clean === "jpg" || clean === "jpeg") return "jpg";
+  if (clean === "webp") return "webp";
+  return "png";
 }
 
 function getJobStore(env) {

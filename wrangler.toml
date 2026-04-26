@@ -9,3 +9,8 @@ pages_build_output_dir = "."
 binding = "IMAGE_WORKBENCH_JOBS"
 id = "b2dfe318e45041f59035394c988887ea"
 preview_id = "d8694a5bc3d84cadaaa8be10abc991df"
+
+[[r2_buckets]]
+binding = "IMAGE_WORKBENCH_R2"
+bucket_name = "lobechat"
+preview_bucket_name = "lobechat"
