@@ -1,0 +1,12 @@
+{
+  "name": "image-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler pages dev .",
+    "deploy": "wrangler pages deploy . --project-name image-workbench"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

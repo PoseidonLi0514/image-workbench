@@ -6,6 +6,7 @@
         apiUrl: $("apiUrl"),
         apiKey: $("apiKey"),
         rememberKey: $("rememberKey"),
+        backendMode: $("backendMode"),
         saveDirStatus: $("saveDirStatus"),
         model: $("model"),
         reasoningEffort: $("reasoningEffort"),
@@ -136,6 +137,7 @@
             runStartedAt: 0,
             runTimer: null,
             lastStatus: "就绪",
+            backendJobId: "",
           };
         }
         return state.runStates[id];
@@ -151,6 +153,7 @@
 
       const settingsKeys = [
         "apiUrl",
+        "backendMode",
         "model",
         "reasoningEffort",
         "imageSize",
@@ -306,8 +309,11 @@
         });
 
         els.sendBtn.addEventListener("click", sendRequest);
-        els.abortBtn.addEventListener("click", () => {
+        els.abortBtn.addEventListener("click", async () => {
           const run = activeRun();
+          if (run.backendJobId) {
+            fetch(`./api/jobs/${encodeURIComponent(run.backendJobId)}`, { method: "DELETE" }).catch(() => {});
+          }
           if (run.controller) run.controller.abort();
         });
         els.copyRequestBtn.addEventListener("click", () => copyText(els.requestPreview.textContent));
@@ -707,6 +713,7 @@
       function renderSavedTurn(turn, images) {
         const user = document.createElement("div");
         user.className = "message user-msg";
+        user.dataset.turnId = turn.id;
         const thumbs = attachmentThumbsHtml(turn.attachments);
         user.innerHTML = [
           '<div class="message-head"><span>user</span><span>model context: current prompt + selected images only</span></div>',
@@ -720,6 +727,7 @@
 
         const wrap = document.createElement("div");
         wrap.className = "message assistant-msg";
+        wrap.dataset.turnId = turn.id;
         wrap.innerHTML = [
           '<div class="message-head">',
           '<span>assistant</span>',
@@ -1211,7 +1219,8 @@
 
       async function sendRequest() {
         const key = els.apiKey.value.trim();
-        if (!key) {
+        const useBackend = els.backendMode.checked;
+        if (!key && !useBackend) {
           toast("缺少 API Key", "error");
           els.apiKey.focus();
           return;
@@ -1243,6 +1252,10 @@
 
         try {
           const started = performance.now();
+          if (useBackend) {
+            await submitBackendJob({ endpoint, apiKey: key, body, sessionId, started });
+            return;
+          }
           const response = await fetch(endpoint, {
             method: "POST",
             headers: {
@@ -1277,9 +1290,11 @@
           setStatus(`完成，用时 ${seconds}s`, sessionId);
         } catch (error) {
           if (error.name === "AbortError") {
+            run.backendJobId = "";
             setStatus("已停止", sessionId);
             appendEvent("AbortError", sessionId);
           } else {
+            run.backendJobId = "";
             setStatus("请求失败", sessionId);
             appendEvent(String(error.stack || error.message || error), sessionId);
             toast(String(error.message || error), "error");
@@ -1288,6 +1303,73 @@
           setRunning(false, sessionId);
           run.controller = null;
         }
+      }
+
+      async function submitBackendJob({ endpoint, apiKey, body, sessionId, started }) {
+        const run = getRunState(sessionId);
+        appendEvent("POST /api/jobs", sessionId);
+        const response = await fetch("./api/jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint, apiKey, request: body }),
+          signal: run.controller.signal,
+        });
+        appendEvent(`JOB HTTP ${response.status} ${response.statusText}`, sessionId);
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || `Job HTTP ${response.status}`);
+        }
+        const job = await response.json();
+        run.backendJobId = job.id;
+        updateActiveTurn(sessionId, {
+          backendJobId: job.id,
+          backendResultHandled: false,
+          status: "后端任务已创建",
+          updatedAt: Date.now(),
+        }, true);
+        setStatus("后端任务已创建，正在等待结果", sessionId);
+        await pollBackendJob(job.id, sessionId, started);
+      }
+
+      async function pollBackendJob(jobId, sessionId, started = performance.now()) {
+        const run = getRunState(sessionId);
+        while (run.isRunning && run.backendJobId === jobId) {
+          const response = await fetch(`./api/jobs/${encodeURIComponent(jobId)}`, {
+            signal: run.controller && run.controller.signal,
+          });
+          if (!response.ok) {
+            const text = await response.text();
+            throw new Error(text || `Job HTTP ${response.status}`);
+          }
+          const job = await response.json();
+          if (job.outputText) replaceText(job.outputText, sessionId);
+          if (job.status === "completed") {
+            if (job.response) {
+              await handleFinalResponse(job.response, true, sessionId);
+            }
+            const seconds = ((performance.now() - started) / 1000).toFixed(1);
+            updateActiveTurn(sessionId, {
+              backendResultHandled: true,
+              status: `完成，用时 ${seconds}s`,
+              updatedAt: Date.now(),
+            }, true);
+            setStatus(`完成，用时 ${seconds}s`, sessionId);
+            run.backendJobId = "";
+            setRunning(false, sessionId);
+            run.controller = null;
+            return;
+          }
+          if (job.status === "failed" || job.status === "canceled") {
+            const message = job.error || (job.status === "canceled" ? "任务已取消" : "后端任务失败");
+            throw new Error(message);
+          }
+          setStatus(job.statusLabel || "后端生成中", sessionId);
+          await sleep(1500);
+        }
+      }
+
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
       }
 
       async function readSse(response, sessionId) {
@@ -1479,6 +1561,7 @@
 
         const user = document.createElement("div");
         user.className = "message user-msg";
+        user.dataset.turnId = run.currentTurnId;
         const thumbs = attachmentThumbsHtml(attachments);
         user.innerHTML = [
           '<div class="message-head"><span>user</span><span>model context: current prompt + selected images only</span></div>',
@@ -1492,6 +1575,7 @@
 
         const wrap = document.createElement("div");
         wrap.className = "message assistant-msg";
+        wrap.dataset.turnId = run.currentTurnId;
         wrap.innerHTML = [
           '<div class="message-head">',
           '<span>assistant</span>',
@@ -2006,6 +2090,8 @@
           attachments: snapshotAttachments(turn.attachments || []),
           assistantText: String(turn.assistantText || ""),
           status: String(turn.status || ""),
+          backendJobId: String(turn.backendJobId || ""),
+          backendResultHandled: Boolean(turn.backendResultHandled),
           createdAt,
           updatedAt: Number(turn.updatedAt) || createdAt,
         };
@@ -2081,6 +2167,8 @@
               userPrompt: turn.userPrompt,
               assistantText: turn.assistantText,
               status: turn.status,
+              backendJobId: turn.backendJobId,
+              backendResultHandled: turn.backendResultHandled,
               attachmentCount: (turn.attachments || []).length,
               createdAt: turn.createdAt,
               updatedAt: turn.updatedAt,
@@ -2573,6 +2661,7 @@
       function markInterruptedTurns() {
         state.turns.forEach((turn) => {
           if (isTerminalTurnStatus(turn.status)) return;
+          if (turn.backendJobId && !turn.backendResultHandled) return;
           turn.status = "已中断（页面刷新）";
           turn.updatedAt = Date.now();
           saveTurn(turn).catch(() => {});
@@ -2601,6 +2690,38 @@
         renderGallery();
         renderFavoriteGallery();
         renderSessionHistory();
+        resumeBackendJobs();
+      }
+
+      function resumeBackendJobs() {
+        if (!els.backendMode.checked) return;
+        const turn = state.turns
+          .filter((entry) => entry.sessionId === state.activeSessionId && entry.backendJobId && !entry.backendResultHandled)
+          .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+        if (!turn) return;
+        prepareRunForTurn(turn);
+        setRunning(true, turn.sessionId);
+        setStatus("正在恢复后端任务", turn.sessionId);
+        pollBackendJob(turn.backendJobId, turn.sessionId).catch((error) => {
+          const run = getRunState(turn.sessionId);
+          run.backendJobId = "";
+          setStatus("请求失败", turn.sessionId);
+          appendEvent(String(error.stack || error.message || error), turn.sessionId);
+          toast(String(error.message || error), "error");
+          setRunning(false, turn.sessionId);
+        });
+      }
+
+      function prepareRunForTurn(turn) {
+        const run = getRunState(turn.sessionId);
+        run.currentTurnId = turn.id;
+        run.currentPrompt = turn.userPrompt || "";
+        run.currentAttachments = snapshotAttachments(turn.attachments || []);
+        run.currentText = turn.assistantText || "";
+        run.currentImages = state.gallery.filter((image) => image.turnId === turn.id);
+        run.seenImageIds = new Set(run.currentImages.map((image) => image.source && image.source.id).filter(Boolean));
+        run.backendJobId = turn.backendJobId || "";
+        run.currentRunEl = els.outputArea.querySelector(`.assistant-msg[data-turn-id="${cssEscape(turn.id)}"]`);
       }
 
       async function saveTurn(turn) {
