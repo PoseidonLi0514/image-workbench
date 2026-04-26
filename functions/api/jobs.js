@@ -84,7 +84,7 @@ async function runJob(store, env, id, payload) {
 
   try {
     await patchJob(store, id, { status: "running", statusLabel: "正在提交模型请求" });
-    const requestBody = payload.request;
+    const requestBody = { ...payload.request, stream: false };
     await appendEvent(store, id, `POST ${endpoint}`);
     const response = await fetch(endpoint, {
       method: "POST",
@@ -120,6 +120,16 @@ async function runJob(store, env, id, payload) {
         throw new Error("Stream ended without a completed response.");
       }
       const stored = await storeResponseAssets(env, id, streamResult.response);
+      if (!hasVisibleOutput(stored)) {
+        await patchJob(store, id, {
+          status: "failed",
+          statusLabel: "响应为空",
+          response: stored,
+          outputText: streamResult.outputText,
+          error: "模型完成了请求，但没有返回可显示的文本或图片。",
+        });
+        return;
+      }
       await patchJob(store, id, {
         status: "completed",
         statusLabel: "完成",
@@ -131,6 +141,16 @@ async function runJob(store, env, id, payload) {
       await patchJob(store, id, { statusLabel: "等待完整响应" });
       const data = await response.json();
       const stored = await storeResponseAssets(env, id, data);
+      if (!hasVisibleOutput(stored)) {
+        await patchJob(store, id, {
+          status: "failed",
+          statusLabel: "响应为空",
+          response: stored,
+          outputText: "",
+          error: "模型完成了请求，但没有返回可显示的文本或图片。",
+        });
+        return;
+      }
       await patchJob(store, id, {
         status: "completed",
         statusLabel: "完成",
@@ -248,6 +268,15 @@ function extractResponseText(response) {
     }
   }
   return chunks.join("");
+}
+
+function hasVisibleOutput(response) {
+  if (extractResponseText(response)) return true;
+  for (const item of response && response.output || []) {
+    if (!item || typeof item !== "object") continue;
+    if (item.type === "image_generation_call" && (item.result || item.result_url || item.result_r2_key)) return true;
+  }
+  return false;
 }
 
 async function storeResponseAssets(env, jobId, response) {
