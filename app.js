@@ -454,6 +454,7 @@
       }
 
       function saveSettings() {
+        enforceStreamModeState();
         const settings = {};
         settingsKeys.forEach((id) => {
           if (!els[id]) return;
@@ -469,6 +470,12 @@
         localStorage.setItem("imageWorkbench.settings", JSON.stringify(settings));
       }
 
+      function enforceStreamModeState() {
+        const backend = Boolean(els.backendMode && els.backendMode.checked);
+        if (backend) els.streamMode.checked = false;
+        els.streamMode.disabled = backend;
+      }
+
       function updateOptionStates() {
         const customSizeField = els.customSize.closest(".field");
         const customSizeActive = els.imageSize.value === "custom";
@@ -478,12 +485,7 @@
         if (els.transparentMode.checked && els.outputFormat.value !== "png" && els.outputFormat.value !== "webp") {
           els.outputFormat.value = "png";
         }
-        if (els.backendMode.checked) {
-          els.streamMode.checked = false;
-          els.streamMode.disabled = true;
-        } else {
-          els.streamMode.disabled = false;
-        }
+        enforceStreamModeState();
         const compressed = els.outputFormat.value === "jpeg" || els.outputFormat.value === "webp";
         els.outputCompression.disabled = !compressed;
         els.compressionValue.textContent = els.outputCompression.value;

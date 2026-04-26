@@ -6,7 +6,7 @@
   <title>Image Workbench</title>
   <link rel="icon" type="image/png" href="./assets/logo.png">
   <link rel="apple-touch-icon" href="./assets/logo.png">
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=20260426-1">
 </head>
 <body>
   <svg aria-hidden="true" class="hidden">
@@ -261,7 +261,7 @@
       </div>
       <div class="params-section"><h3>行为</h3>
         <div class="toggle-row">
-          <label class="check"><input id="streamMode" type="checkbox"><span>Stream events</span></label>
+          <label class="check"><input id="streamMode" type="checkbox" disabled><span>Stream events</span></label>
           <label class="check"><input id="autoDownload" type="checkbox"><span>自动下载</span></label>
           <label class="check"><input id="storeResponse" type="checkbox"><span>store: true</span></label>
           <label class="check"><input id="preservePrompt" type="checkbox" checked><span>保持 prompt 原样</span></label>
@@ -322,6 +322,6 @@
   </dialog>
 
   <div class="toast" id="toast"></div>
-  <script src="./app.js" defer></script>
+  <script src="./app.js?v=20260426-1" defer></script>
 </body>
 </html>
