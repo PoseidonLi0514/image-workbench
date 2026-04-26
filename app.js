@@ -14,6 +14,7 @@
         backendMode: $("backendMode"),
         saveDirStatus: $("saveDirStatus"),
         model: $("model"),
+        namingModel: $("namingModel"),
         reasoningEffort: $("reasoningEffort"),
         maxTokens: $("maxTokens"),
         serviceTier: $("serviceTier"),
@@ -37,6 +38,7 @@
         storeResponse: $("storeResponse"),
         systemPrompt: $("systemPrompt"),
         prompt: $("prompt"),
+        promptLibraryBtn: $("promptLibraryBtn"),
         modeGenerate: $("modeGenerate"),
         modeEdit: $("modeEdit"),
         dropzone: $("dropzone"),
@@ -107,18 +109,32 @@
         tabAllGallery: $("tabAllGallery"),
         allGalleryView: $("allGalleryView"),
         allGallery: $("allGallery"),
+        allGallerySelectBtn: $("allGallerySelectBtn"),
+        allGallerySelectAllBtn: $("allGallerySelectAllBtn"),
+        allGalleryDeleteSelectedBtn: $("allGalleryDeleteSelectedBtn"),
+        allGallerySelectionMeta: $("allGallerySelectionMeta"),
         tabFavoriteGallery: $("tabFavoriteGallery"),
         favoriteGalleryView: $("favoriteGalleryView"),
         favoriteGallery: $("favoriteGallery"),
         tabReferenceGallery: $("tabReferenceGallery"),
         referenceGalleryView: $("referenceGalleryView"),
         referenceGallery: $("referenceGallery"),
+        promptDialog: $("promptDialog"),
+        closePromptDialogBtn: $("closePromptDialogBtn"),
+        promptFavoriteDraft: $("promptFavoriteDraft"),
+        savePromptFavoriteBtn: $("savePromptFavoriteBtn"),
+        usePromptDraftBtn: $("usePromptDraftBtn"),
+        promptFavoriteList: $("promptFavoriteList"),
+        promptFavoriteMeta: $("promptFavoriteMeta"),
       };
 
       const state = {
         mode: "generate",
         attachments: [],
         gallery: [],
+        promptFavorites: [],
+        allGallerySelecting: false,
+        selectedGalleryIds: new Set(),
         turns: [],
         sessions: [],
         activeSessionId: "",
@@ -176,6 +192,7 @@
         "apiUrl",
         "backendMode",
         "model",
+        "namingModel",
         "reasoningEffort",
         "imageSize",
         "customSize",
@@ -201,6 +218,7 @@
         restoreSettings();
         restoreSidebarState();
         loadSessions();
+        loadPromptFavorites();
         bindEvents();
         updateMode();
         updateOptionStates();
@@ -343,6 +361,13 @@
         els.clearRunBtn.addEventListener("click", () => clearRun());
         els.clearGalleryBtn.addEventListener("click", clearGallery);
         els.newSessionBtn.addEventListener("click", newSession);
+        els.promptLibraryBtn.addEventListener("click", openPromptDialog);
+        els.closePromptDialogBtn.addEventListener("click", () => els.promptDialog.close());
+        els.savePromptFavoriteBtn.addEventListener("click", savePromptFavoriteFromDialog);
+        els.usePromptDraftBtn.addEventListener("click", () => usePromptText(els.promptFavoriteDraft.value, { closeDialog: true }));
+        els.allGallerySelectBtn.addEventListener("click", toggleAllGallerySelection);
+        els.allGallerySelectAllBtn.addEventListener("click", toggleSelectAllGallery);
+        els.allGalleryDeleteSelectedBtn.addEventListener("click", deleteSelectedGalleryImages);
         els.saveDirBtn.addEventListener("click", chooseSaveDirectory);
         els.saveSessionDirBtn.addEventListener("click", saveCurrentSessionToDirectory);
         els.exportSessionBtn.addEventListener("click", exportCurrentSessionZip);
@@ -458,6 +483,154 @@
         if (tab === "referenceGallery") renderReferenceGallery();
       }
 
+      function loadPromptFavorites() {
+        try {
+          const raw = localStorage.getItem("imageWorkbench.promptFavorites");
+          const items = raw ? JSON.parse(raw) : [];
+          state.promptFavorites = Array.isArray(items)
+            ? items.map(normalizePromptFavorite).filter((item) => item.prompt)
+            : [];
+        } catch {
+          state.promptFavorites = [];
+        }
+      }
+
+      function savePromptFavorites() {
+        state.promptFavorites.sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0));
+        localStorage.setItem("imageWorkbench.promptFavorites", JSON.stringify(state.promptFavorites));
+        renderPromptFavoriteMeta();
+      }
+
+      function normalizePromptFavorite(item) {
+        const now = Date.now();
+        const prompt = String(item && item.prompt || "");
+        const createdAt = Number(item && item.createdAt) || now;
+        return {
+          id: String(item && item.id || uid("prompt")),
+          title: String(item && item.title || compactPromptTitle(prompt) || "未命名提示词").slice(0, 80),
+          prompt,
+          createdAt,
+          updatedAt: Number(item && item.updatedAt) || createdAt,
+        };
+      }
+
+      function openPromptDialog() {
+        els.promptFavoriteDraft.value = els.prompt.value.trim();
+        renderPromptFavorites();
+        els.promptDialog.showModal();
+        setTimeout(() => els.promptFavoriteDraft.focus(), 0);
+      }
+
+      async function savePromptFavoriteFromDialog() {
+        const prompt = els.promptFavoriteDraft.value.trim();
+        if (!prompt) {
+          toast("提示词为空", "error");
+          return;
+        }
+        const now = Date.now();
+        const favorite = normalizePromptFavorite({
+          id: uid("prompt"),
+          title: compactPromptTitle(prompt),
+          prompt,
+          createdAt: now,
+          updatedAt: now,
+        });
+        state.promptFavorites.unshift(favorite);
+        savePromptFavorites();
+        renderPromptFavorites();
+        toast("提示词已收藏");
+        renamePromptFavoriteWithAi(favorite.id, { silent: true });
+      }
+
+      function renderPromptFavorites() {
+        renderPromptFavoriteMeta();
+        els.promptFavoriteList.innerHTML = "";
+        if (!state.promptFavorites.length) {
+          els.promptFavoriteList.innerHTML = '<div class="empty compact-empty">还没有收藏提示词</div>';
+          return;
+        }
+        state.promptFavorites
+          .slice()
+          .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0))
+          .forEach((favorite) => {
+            const item = document.createElement("article");
+            item.className = "prompt-favorite-item";
+
+            const titleField = document.createElement("div");
+            titleField.className = "field";
+            titleField.innerHTML = '<label>命名</label>';
+            const titleInput = document.createElement("input");
+            titleInput.value = favorite.title || "";
+            titleInput.spellcheck = false;
+            titleInput.addEventListener("change", () => {
+              favorite.title = titleInput.value.trim().slice(0, 80) || compactPromptTitle(favorite.prompt);
+              favorite.updatedAt = Date.now();
+              savePromptFavorites();
+              titleInput.value = favorite.title;
+              renderPromptFavorites();
+            });
+            titleField.append(titleInput);
+
+            const promptField = document.createElement("div");
+            promptField.className = "field";
+            promptField.innerHTML = '<label>提示词</label>';
+            const textarea = document.createElement("textarea");
+            textarea.value = favorite.prompt || "";
+            textarea.spellcheck = false;
+            textarea.addEventListener("input", () => {
+              favorite.prompt = textarea.value;
+              favorite.updatedAt = Date.now();
+              savePromptFavorites();
+            });
+            promptField.append(textarea);
+
+            const actions = document.createElement("div");
+            actions.className = "button-row";
+            actions.append(
+              actionButton("#i-plus", "使用", "放入输入框", () => usePromptText(favorite.prompt, { closeDialog: true })),
+              actionButton("#i-copy", "复制", "复制提示词", () => copyText(favorite.prompt)),
+              actionButton("#i-spark", "重命名", "AI 重命名", () => renamePromptFavoriteWithAi(favorite.id)),
+              actionButton("#i-trash", "删除", "删除收藏", () => deletePromptFavorite(favorite.id), "danger-text"),
+            );
+
+            item.append(titleField, promptField, actions);
+            els.promptFavoriteList.append(item);
+          });
+      }
+
+      function renderPromptFavoriteMeta() {
+        if (!els.promptFavoriteMeta) return;
+        els.promptFavoriteMeta.innerHTML = `<span class="chip">${state.promptFavorites.length} prompts</span>`;
+      }
+
+      function deletePromptFavorite(id) {
+        const favorite = state.promptFavorites.find((item) => item.id === id);
+        if (!favorite) return;
+        if (!confirm(`删除提示词收藏 "${favorite.title || "未命名提示词"}"？`)) return;
+        state.promptFavorites = state.promptFavorites.filter((item) => item.id !== id);
+        savePromptFavorites();
+        renderPromptFavorites();
+        toast("提示词收藏已删除");
+      }
+
+      async function renamePromptFavoriteWithAi(id, options = {}) {
+        const favorite = state.promptFavorites.find((item) => item.id === id);
+        if (!favorite || !favorite.prompt.trim()) return;
+        try {
+          if (!options.silent) toast("正在 AI 重命名提示词");
+          const title = await requestAiName("prompt", favorite.prompt);
+          const latest = state.promptFavorites.find((item) => item.id === id);
+          if (!latest) return;
+          latest.title = title;
+          latest.updatedAt = Date.now();
+          savePromptFavorites();
+          renderPromptFavorites();
+          if (!options.silent) toast("提示词已重命名");
+        } catch (error) {
+          if (!options.silent) toast(`AI 重命名失败：${cleanErrorMessage(error.message || error)}`, "error");
+        }
+      }
+
       function restoreSettings() {
         const raw = localStorage.getItem("imageWorkbench.settings");
         if (!raw) return;
@@ -567,6 +740,7 @@
         const session = {
           id: uid("session"),
           title,
+          titleMode: "default",
           createdAt: now,
           updatedAt: now,
         };
@@ -576,6 +750,7 @@
 
       function saveSessions() {
         state.sessions.forEach(ensureSessionFolderName);
+        state.sessions.sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0));
         localStorage.setItem("imageWorkbench.sessions", JSON.stringify(state.sessions));
         localStorage.setItem("imageWorkbench.activeSession", state.activeSessionId);
       }
@@ -612,13 +787,18 @@
         const session = getActiveSession();
         if (!session) return;
         session.updatedAt = Date.now();
-        if (prompt && /^Session \d+$/.test(session.title)) {
-          session.title = prompt.slice(0, 28);
+        const shouldAutoName = prompt && canAutoNameSession(session);
+        if (shouldAutoName) {
+          session.title = compactPromptTitle(prompt);
+          session.titleMode = "auto-pending";
           if (!currentSessionImages().length) session.folderName = buildSessionFolderName(session);
         }
         saveSessions();
         renderSessions();
         updateSaveDirStatus();
+        if (shouldAutoName) {
+          renameSessionWithAi(session.id, { silent: true, onlyAutoPending: true, text: prompt });
+        }
       }
 
       function getActiveSession() {
@@ -627,7 +807,8 @@
 
       function renderSessions() {
         els.sessionList.innerHTML = "";
-        state.sessions.forEach((session) => {
+        const sessions = state.sessions.slice().sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0));
+        sessions.forEach((session) => {
           const imageCount = state.gallery.filter((image) => isGeneratedImage(image) && image.sessionId === session.id).length;
           const turnCount = state.turns.filter((turn) => turn.sessionId === session.id).length;
           const sessionRun = state.runStates[session.id];
@@ -649,6 +830,7 @@
           actions.className = "session-actions";
           actions.append(
             iconButton("#i-pen", "重命名 Session", () => renameSession(session.id)),
+            iconButton("#i-spark", "AI 重命名", () => renameSessionWithAi(session.id)),
             iconButton("#i-trash", "删除 Session", () => deleteSession(session.id)),
           );
           row.append(btn, actions);
@@ -664,6 +846,7 @@
         const title = next.trim();
         if (!title) return;
         session.title = title.slice(0, 80);
+        session.titleMode = "manual";
         session.updatedAt = Date.now();
         if (!state.gallery.some((image) => isGeneratedImage(image) && image.sessionId === id)) {
           session.folderName = buildSessionFolderName(session);
@@ -673,18 +856,73 @@
         updateSaveDirStatus();
       }
 
+      async function renameSessionWithAi(id, options = {}) {
+        const session = state.sessions.find((entry) => entry.id === id);
+        if (!session) return;
+        if (options.onlyAutoPending && session.titleMode !== "auto-pending") return;
+        const text = options.text || buildSessionNamingText(session);
+        if (!String(text || "").trim()) {
+          if (!options.silent) toast("没有可命名的 Session 内容", "error");
+          return;
+        }
+        const startedMode = session.titleMode || "";
+        try {
+          if (!options.silent) toast("正在 AI 重命名 Session");
+          const title = await requestAiName("session", text);
+          const latest = state.sessions.find((entry) => entry.id === id);
+          if (!latest) return;
+          if (options.onlyAutoPending && latest.titleMode !== "auto-pending") return;
+          if (!options.onlyAutoPending && startedMode === "manual" && latest.titleMode !== "manual") return;
+          latest.title = title;
+          latest.titleMode = "ai";
+          latest.updatedAt = Date.now();
+          if (!state.gallery.some((image) => isGeneratedImage(image) && image.sessionId === id)) {
+            latest.folderName = buildSessionFolderName(latest);
+          }
+          saveSessions();
+          renderSessions();
+          updateSaveDirStatus();
+          if (!options.silent) toast("Session 已重命名");
+        } catch (error) {
+          if (!options.silent) toast(`AI 重命名失败：${cleanErrorMessage(error.message || error)}`, "error");
+        }
+      }
+
+      function buildSessionNamingText(session) {
+        const rows = currentSessionTurnsFor(session.id)
+          .slice()
+          .sort((a, b) => a.createdAt - b.createdAt)
+          .slice(-6)
+          .map((turn, index) => `${index + 1}. ${turn.userPrompt || turn.assistantText || turn.status || ""}`)
+          .filter((line) => line.replace(/^\d+\.\s*/, "").trim());
+        if (session.id === state.activeSessionId && els.prompt.value.trim()) {
+          rows.push(`当前输入：${els.prompt.value.trim()}`);
+        }
+        if (!rows.length) rows.push(session.title || "");
+        return rows.join("\n").slice(0, 4000);
+      }
+
+      function canAutoNameSession(session) {
+        if (!session) return false;
+        if (session.titleMode === "default" || session.titleMode === "auto-pending") return true;
+        return !session.titleMode && /^Session \d+$/i.test(String(session.title || ""));
+      }
+
+      function compactPromptTitle(text) {
+        const clean = String(text || "").replace(/\s+/g, " ").trim();
+        return clean.slice(0, 28) || "未命名";
+      }
+
       async function deleteSession(id) {
         const session = state.sessions.find((entry) => entry.id === id);
         if (!session) return;
-        const images = state.gallery.filter((image) => image.sessionId === id);
-        const generatedCount = images.filter(isGeneratedImage).length;
         const turns = state.turns.filter((turn) => turn.sessionId === id);
-        if (!confirm(`删除 "${session.title || "Session"}"、${turns.length} 轮对话和其中 ${generatedCount} 张本地图片？`)) return;
+        if (!confirm(`删除 "${session.title || "Session"}" 和 ${turns.length} 轮对话？图库图片会保留。`)) return;
 
         state.sessions = state.sessions.filter((entry) => entry.id !== id);
         if (!state.sessions.length) state.sessions = [createSession("Session 1")];
+        state.sessions.sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0));
         if (state.activeSessionId === id) state.activeSessionId = state.sessions[0].id;
-        state.gallery = state.gallery.filter((image) => image.sessionId !== id);
         state.turns = state.turns.filter((turn) => turn.sessionId !== id);
         const deletedRun = state.runStates[id];
         if (deletedRun) {
@@ -693,12 +931,6 @@
           delete state.runStates[id];
         }
 
-        if (state.db && images.length) {
-          const tx = state.db.transaction("images", "readwrite");
-          const store = tx.objectStore("images");
-          images.forEach((image) => store.delete(image.id));
-          await transactionDone(tx);
-        }
         if (state.db && turns.length) {
           const tx = state.db.transaction("turns", "readwrite");
           const store = tx.objectStore("turns");
@@ -877,9 +1109,7 @@
 
       function reuseMessageInput(text, attachments) {
         const nextAttachments = snapshotAttachments(attachments || []);
-        els.prompt.value = String(text || "");
-        els.prompt.style.height = "auto";
-        els.prompt.style.height = Math.min(els.prompt.scrollHeight, 160) + "px";
+        setPromptText(text || "");
         state.attachments = nextAttachments;
         state.mode = nextAttachments.length ? "edit" : "generate";
         updateMode();
@@ -888,6 +1118,25 @@
         els.prompt.focus({ preventScroll: true });
         els.prompt.scrollIntoView({ block: "nearest", behavior: "smooth" });
         toast("已复用到输入框");
+      }
+
+      function setPromptText(text) {
+        els.prompt.value = String(text || "");
+        els.prompt.style.height = "auto";
+        els.prompt.style.height = Math.min(els.prompt.scrollHeight, 160) + "px";
+        updateRequestPreview();
+      }
+
+      function usePromptText(text, options = {}) {
+        const value = String(text || "").trim();
+        if (!value) {
+          toast("提示词为空", "error");
+          return;
+        }
+        setPromptText(value);
+        els.prompt.focus({ preventScroll: true });
+        if (options.closeDialog) els.promptDialog.close();
+        toast("已放入输入框");
       }
 
       function imageAttachments(images) {
@@ -1690,6 +1939,31 @@
         return `${BACKEND_API_BASE_URL}${path}`;
       }
 
+      async function requestAiName(kind, text) {
+        const response = await fetch(backendApiUrl("/api/name"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kind,
+            text,
+            model: els.namingModel.value.trim() || "deepseek-v4-flash",
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        const name = sanitizeAiName(data.name);
+        if (!name) throw new Error("命名结果为空");
+        return name;
+      }
+
+      function sanitizeAiName(name) {
+        return String(name || "")
+          .replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 48);
+      }
+
       function isLocalFrontend() {
         return location.hostname === "localhost" || location.hostname === "127.0.0.1";
       }
@@ -2034,11 +2308,12 @@
       function renderAllGallery() {
         els.allGallery.innerHTML = "";
         const images = state.gallery.filter(isGeneratedImage);
+        syncAllGallerySelection(images);
         if (!images.length) {
           els.allGallery.innerHTML = '<div class="empty">还没有生成过图片</div>';
           return;
         }
-        images.forEach((image) => els.allGallery.append(createImageCard(image)));
+        images.forEach((image) => els.allGallery.append(createImageCard(image, { selectable: state.allGallerySelecting })));
       }
 
       function renderFavoriteGallery() {
@@ -2065,17 +2340,91 @@
         references.forEach((image) => els.referenceGallery.append(createImageCard(image)));
       }
 
-      function createImageCard(image) {
+      function toggleAllGallerySelection() {
+        state.allGallerySelecting = !state.allGallerySelecting;
+        if (!state.allGallerySelecting) state.selectedGalleryIds.clear();
+        renderAllGallery();
+      }
+
+      function syncAllGallerySelection(images = state.gallery.filter(isGeneratedImage)) {
+        const validIds = new Set(images.map((image) => image.id));
+        [...state.selectedGalleryIds].forEach((id) => {
+          if (!validIds.has(id)) state.selectedGalleryIds.delete(id);
+        });
+        const selectedCount = state.selectedGalleryIds.size;
+        els.allGallerySelectBtn.classList.toggle("primary", state.allGallerySelecting);
+        els.allGallerySelectBtn.innerHTML = state.allGallerySelecting
+          ? '<svg><use href="#i-x"></use></svg><span>取消选择</span>'
+          : '<svg><use href="#i-check-square"></use></svg><span>选择</span>';
+        els.allGallerySelectAllBtn.classList.toggle("hidden", !state.allGallerySelecting || !images.length);
+        els.allGalleryDeleteSelectedBtn.classList.toggle("hidden", !state.allGallerySelecting);
+        els.allGalleryDeleteSelectedBtn.disabled = selectedCount === 0;
+        els.allGallerySelectAllBtn.innerHTML = selectedCount && selectedCount === images.length
+          ? '<svg><use href="#i-square"></use></svg><span>取消全选</span>'
+          : '<svg><use href="#i-check-square"></use></svg><span>全选</span>';
+        els.allGallerySelectionMeta.innerHTML = state.allGallerySelecting
+          ? `<span class="chip">已选择 ${selectedCount} / ${images.length}</span>`
+          : `<span class="chip">${images.length} images</span>`;
+      }
+
+      function toggleGallerySelection(id) {
+        if (!state.allGallerySelecting) return;
+        if (state.selectedGalleryIds.has(id)) state.selectedGalleryIds.delete(id);
+        else state.selectedGalleryIds.add(id);
+        renderAllGallery();
+      }
+
+      function toggleSelectAllGallery() {
+        const images = state.gallery.filter(isGeneratedImage);
+        if (state.selectedGalleryIds.size === images.length) {
+          state.selectedGalleryIds.clear();
+        } else {
+          images.forEach((image) => state.selectedGalleryIds.add(image.id));
+        }
+        renderAllGallery();
+      }
+
+      async function deleteSelectedGalleryImages() {
+        const ids = [...state.selectedGalleryIds];
+        if (!ids.length) return;
+        if (!confirm(`删除选中的 ${ids.length} 张图片？`)) return;
+        const deleted = await deleteImages(ids, { silent: true });
+        state.selectedGalleryIds.clear();
+        state.allGallerySelecting = false;
+        renderAllGallery();
+        toast(`已删除 ${deleted.length} 张图片`);
+      }
+
+      function createImageCard(image, options = {}) {
         const card = document.createElement("article");
         card.className = "image-card";
         card.dataset.imageId = image.id;
         card.classList.toggle("reference-card", isReferenceImage(image));
+        card.classList.toggle("selected", state.selectedGalleryIds.has(image.id));
 
         const img = document.createElement("img");
         img.className = "image-thumb";
         img.src = image.dataUrl;
         img.alt = image.revisedPrompt || image.prompt || image.name;
-        img.addEventListener("click", () => openImageModal(image));
+        img.addEventListener("click", () => {
+          if (options.selectable) toggleGallerySelection(image.id);
+          else openImageModal(image);
+        });
+
+        let selectBtn = null;
+        if (options.selectable) {
+          selectBtn = document.createElement("button");
+          selectBtn.type = "button";
+          selectBtn.className = "select-image-btn";
+          selectBtn.title = state.selectedGalleryIds.has(image.id) ? "取消选择" : "选择";
+          selectBtn.setAttribute("aria-label", selectBtn.title);
+          selectBtn.setAttribute("aria-pressed", state.selectedGalleryIds.has(image.id) ? "true" : "false");
+          selectBtn.innerHTML = `<svg><use href="${state.selectedGalleryIds.has(image.id) ? "#i-check-square" : "#i-square"}"></use></svg>`;
+          selectBtn.addEventListener("click", (event) => {
+            event.stopPropagation();
+            toggleGallerySelection(image.id);
+          });
+        }
 
         let favoriteBtn = null;
         if (isGeneratedImage(image)) {
@@ -2124,6 +2473,7 @@
 
         info.append(title, meta, actions);
         card.append(img);
+        if (selectBtn) card.append(selectBtn);
         if (favoriteBtn) card.append(favoriteBtn);
         card.append(info);
         return card;
@@ -2497,6 +2847,10 @@
         return state.turns.filter((turn) => turn.sessionId === state.activeSessionId);
       }
 
+      function currentSessionTurnsFor(sessionId) {
+        return state.turns.filter((turn) => turn.sessionId === sessionId);
+      }
+
       function snapshotAttachments(attachments) {
         return (attachments || []).map((item) => ({
           id: item.id || uid("input"),
@@ -2744,6 +3098,8 @@
       async function clearGallery() {
         if (!confirm("清空本地图库？")) return;
         state.gallery = [];
+        state.selectedGalleryIds.clear();
+        state.allGallerySelecting = false;
         renderGallery();
         renderAllGallery();
         renderFavoriteGallery();
@@ -2758,23 +3114,40 @@
       }
 
       async function deleteImage(id, options = {}) {
-        const image = state.gallery.find((entry) => entry.id === id);
-        state.gallery = state.gallery.filter((image) => image.id !== id);
-        if (image && isReferenceImage(image)) clearReferenceIdFromAttachments(id);
-        const run = activeRun();
-        run.currentImages = run.currentImages.filter((image) => image.id !== id);
+        const deleted = await deleteImages([id], options);
+        const image = deleted[0];
+        if (!options.silent && image && isReferenceImage(image)) toast("参考图已删除");
+      }
+
+      async function deleteImages(ids, options = {}) {
+        const idSet = new Set(ids);
+        const deleted = state.gallery.filter((entry) => idSet.has(entry.id));
+        if (!deleted.length) return [];
+        state.gallery = state.gallery.filter((image) => !idSet.has(image.id));
+        deleted.filter(isReferenceImage).forEach((image) => clearReferenceIdFromAttachments(image.id));
+        Object.values(state.runStates).forEach((run) => {
+          run.currentImages = run.currentImages.filter((image) => !idSet.has(image.id));
+        });
+        [...state.selectedGalleryIds].forEach((id) => {
+          if (idSet.has(id)) state.selectedGalleryIds.delete(id);
+        });
         renderGallery();
         renderAllGallery();
         renderFavoriteGallery();
         renderReferenceGallery();
         renderAttachments();
+        const run = activeRun();
         if (run.currentRunEl && run.currentRunEl.isConnected) renderCurrentImages();
         else renderSessionHistory();
         renderSessions();
         if (state.db) {
-          await txDone(state.db.transaction("images", "readwrite").objectStore("images").delete(id));
+          const tx = state.db.transaction("images", "readwrite");
+          const store = tx.objectStore("images");
+          deleted.forEach((image) => store.delete(image.id));
+          await transactionDone(tx);
         }
-        if (!options.silent && image && isReferenceImage(image)) toast("参考图已删除");
+        if (!options.silent && deleted.length > 1) toast(`已删除 ${deleted.length} 项`);
+        return deleted;
       }
 
       function syncActiveRunControls() {

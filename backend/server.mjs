@@ -20,6 +20,7 @@ const JOB_TTL_SECONDS = 60 * 60 * 24 * 7;
 const MAX_EVENTS = 200;
 const UPSTREAM_TIMEOUT_MS = Number(process.env.UPSTREAM_TIMEOUT_MS || 10 * 60 * 1000);
 const JOB_STREAM_PING_MS = Number(process.env.JOB_STREAM_PING_MS || 10 * 1000);
+const NAMING_TIMEOUT_MS = Number(process.env.NAMING_TIMEOUT_MS || 45 * 1000);
 const activeJobs = new Map();
 const d1 = new D1Client();
 const SAFETY_CATEGORY_LABELS = new Map([
@@ -94,6 +95,10 @@ async function handleRequest(request, response) {
   }
   if (url.pathname === "/api/jobs" && request.method === "GET") {
     await handleListJobs(response, url);
+    return;
+  }
+  if (url.pathname === "/api/name" && request.method === "POST") {
+    await handleNameRequest(request, response);
     return;
   }
   const jobMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)$/);
@@ -231,6 +236,90 @@ async function handleDeleteJob(response, id) {
   }
   await patchJob(id, { status: "canceled", statusLabel: "已取消", error: "任务已取消" });
   writeJson(response, { ok: true, id, status: "canceled" });
+}
+
+async function handleNameRequest(request, response) {
+  const payload = await readJsonBody(request);
+  const text = String(payload && payload.text || "").trim();
+  if (!text) {
+    writeJson(response, { error: "text is required" }, 400);
+    return;
+  }
+  const apiKey = process.env.APIKEY
+    || process.env.IMAGE_WORKBENCH_API_KEY
+    || process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    writeJson(response, { error: "Missing backend API key for naming." }, 500);
+    return;
+  }
+  const endpoint = resolveEndpoint("");
+  if (!endpoint) {
+    writeJson(response, { error: "Missing backend BASEURL for naming." }, 500);
+    return;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(new Error(`命名请求超过 ${Math.round(NAMING_TIMEOUT_MS / 1000)} 秒未完成`)), NAMING_TIMEOUT_MS);
+  try {
+    const upstream = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({
+        model: String(payload.model || process.env.IMAGE_WORKBENCH_NAMING_MODEL || "deepseek-v4-flash").trim(),
+        input: [
+          {
+            role: "user",
+            content: [
+              { type: "input_text", text: buildNamingPrompt(payload.kind, text) },
+            ],
+          },
+        ],
+        stream: false,
+        store: false,
+        max_output_tokens: 80,
+      }),
+      signal: controller.signal,
+    });
+    if (!upstream.ok) {
+      const body = await upstream.text();
+      writeJson(response, { error: body || `Naming HTTP ${upstream.status}` }, upstream.status);
+      return;
+    }
+    const data = await upstream.json();
+    const name = cleanGeneratedName(extractResponseText(data) || data.output_text || "");
+    if (!name) {
+      writeJson(response, { error: "Naming response is empty." }, 502);
+      return;
+    }
+    writeJson(response, { name });
+  } catch (error) {
+    writeJson(response, { error: errorMessage(error) }, error && error.name === "AbortError" ? 504 : 500);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function buildNamingPrompt(kind, text) {
+  const target = String(kind || "") === "session" ? "Session" : "提示词";
+  return [
+    `给下面的${target}起一个简短中文名称。`,
+    "要求：只输出名称，不要解释，不要加引号；最多 16 个汉字或 32 个英文字符；保留核心主题。",
+    "",
+    text.slice(0, 4000),
+  ].join("\n");
+}
+
+function cleanGeneratedName(name) {
+  return String(name || "")
+    .split(/\r?\n/)[0]
+    .replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 48);
 }
 
 async function handleAsset(response, key) {

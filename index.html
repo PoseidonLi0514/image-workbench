@@ -6,7 +6,7 @@
   <title>Image Workbench</title>
   <link rel="icon" type="image/png" href="./assets/logo.png">
   <link rel="apple-touch-icon" href="./assets/logo.png">
-  <link rel="stylesheet" href="./styles.css?v=20260426-7">
+  <link rel="stylesheet" href="./styles.css?v=20260427-1">
 </head>
 <body>
   <svg aria-hidden="true" class="hidden">
@@ -126,6 +126,7 @@
                 <label for="model">Model</label>
                 <input id="model" list="modelList" spellcheck="false" value="gpt-5.4">
                 <datalist id="modelList">
+                  <option value="deepseek-v4-flash"></option>
                   <option value="gpt-5.4"></option>
                   <option value="gpt-5.4-image"></option>
                   <option value="gpt-5.2"></option>
@@ -213,6 +214,14 @@
           <div class="gallery" id="gallery"></div>
         </div>
         <div class="gallery-view hidden" id="allGalleryView">
+          <div class="gallery-toolbar">
+            <div class="button-row">
+              <button class="btn sm" id="allGallerySelectBtn" type="button"><svg><use href="#i-check-square"></use></svg><span>选择</span></button>
+              <button class="btn sm hidden" id="allGallerySelectAllBtn" type="button"><svg><use href="#i-check-square"></use></svg><span>全选</span></button>
+              <button class="btn sm danger hidden" id="allGalleryDeleteSelectedBtn" type="button" disabled><svg><use href="#i-trash"></use></svg><span>删除所选</span></button>
+            </div>
+            <div class="meta" id="allGallerySelectionMeta"></div>
+          </div>
           <div class="gallery" id="allGallery"></div>
         </div>
         <div class="gallery-view hidden" id="favoriteGalleryView">
@@ -239,6 +248,7 @@
                 <button id="modeEdit" type="button">修改</button>
               </div>
               <textarea id="prompt" rows="1" spellcheck="false" placeholder="描述你想生成的图片..."></textarea>
+              <button class="composer-icon-btn" id="promptLibraryBtn" type="button" title="提示词收藏"><svg><use href="#i-star"></use></svg></button>
               <button class="composer-icon-btn" id="paramsToggleBtn" type="button" title="参数设置"><svg><use href="#i-settings"></use></svg></button>
               <button id="abortBtn" type="button" disabled title="停止请求"><svg><use href="#i-stop"></use></svg></button>
               <button id="sendBtn" type="button" title="发送请求 (Ctrl+Enter)"><svg><use href="#i-send"></use></svg></button>
@@ -266,6 +276,7 @@
         <div class="params-grid">
           <div class="field"><label for="maxTokens">Max tokens</label><input id="maxTokens" type="number" min="1" step="1" placeholder="auto"></div>
           <div class="field"><label for="serviceTier">Tier</label><select id="serviceTier"><option value="">auto</option><option value="default">default</option><option value="priority">priority</option></select></div>
+          <div class="field field-full"><label for="namingModel">Naming model</label><input id="namingModel" list="modelList" spellcheck="false" value="deepseek-v4-flash"></div>
         </div>
       </div>
       <div class="params-section"><h3>图像</h3>
@@ -317,6 +328,29 @@
     </div>
   </dialog>
 
+  <dialog id="promptDialog" class="prompt-dialog">
+    <div class="modal-head"><h3 class="modal-title">提示词收藏</h3><button class="btn icon" id="closePromptDialogBtn" type="button" title="关闭"><svg><use href="#i-x"></use></svg></button></div>
+    <div class="prompt-modal-body">
+      <section class="prompt-current">
+        <div class="field">
+          <label for="promptFavoriteDraft">当前提示词</label>
+          <textarea id="promptFavoriteDraft" spellcheck="false" placeholder="输入或粘贴要收藏的提示词"></textarea>
+        </div>
+        <div class="button-row">
+          <button class="btn primary" id="savePromptFavoriteBtn" type="button"><svg><use href="#i-star"></use></svg><span>收藏当前</span></button>
+          <button class="btn" id="usePromptDraftBtn" type="button"><svg><use href="#i-plus"></use></svg><span>放入输入框</span></button>
+        </div>
+      </section>
+      <section class="prompt-favorites-panel">
+        <div class="prompt-list-head">
+          <h4>已收藏</h4>
+          <span class="meta" id="promptFavoriteMeta"></span>
+        </div>
+        <div class="prompt-favorite-list" id="promptFavoriteList"></div>
+      </section>
+    </div>
+  </dialog>
+
   <dialog id="jsonDialog">
     <div class="modal-head"><h3 class="modal-title">导入响应 JSON</h3><button class="btn icon" id="closeJsonBtn" type="button" title="关闭"><svg><use href="#i-x"></use></svg></button></div>
     <div class="modal-body">
@@ -339,6 +373,6 @@
   </dialog>
 
   <div class="toast" id="toast"></div>
-  <script src="./app.js?v=20260426-7" defer></script>
+  <script src="./app.js?v=20260427-1" defer></script>
 </body>
 </html>
