@@ -239,7 +239,7 @@
         els.apiKey.addEventListener("input", () => {
           if (els.rememberKey.checked) saveSettings();
         });
-        ["imageSize", "outputFormat", "transparentMode"].forEach((id) => {
+        ["imageSize", "outputFormat", "transparentMode", "backendMode"].forEach((id) => {
           els[id].addEventListener("change", updateOptionStates);
         });
         ["outputCompression", "chromaTolerance"].forEach((id) => {
@@ -477,6 +477,12 @@
         updateSizeHint();
         if (els.transparentMode.checked && els.outputFormat.value !== "png" && els.outputFormat.value !== "webp") {
           els.outputFormat.value = "png";
+        }
+        if (els.backendMode.checked) {
+          els.streamMode.checked = false;
+          els.streamMode.disabled = true;
+        } else {
+          els.streamMode.disabled = false;
         }
         const compressed = els.outputFormat.value === "jpeg" || els.outputFormat.value === "webp";
         els.outputCompression.disabled = !compressed;
@@ -1246,6 +1252,7 @@
         const endpoint = rawUrl ? normalizeEndpoint(rawUrl) : "";
         const promptText = els.prompt.value.trim();
         const body = buildRequestBody();
+        if (useBackend) body.stream = false;
         run.controller = new AbortController();
         startFrontendTurn(promptText, state.attachments, sessionId);
         els.prompt.value = "";

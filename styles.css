@@ -815,6 +815,8 @@ details.sidebar-section[open] > summary.sidebar-section-title::before {
 /* ── Checkboxes ── */
 .check { display: flex; align-items: center; gap: 8px; min-height: 32px; color: var(--text-2); font-size: 13px; }
 .check input { width: 17px; height: 17px; accent-color: var(--brand); }
+.check input:disabled { opacity: .45; cursor: not-allowed; }
+.check input:disabled + span { color: var(--subtle); }
 
 .toggle-row { display: grid; gap: 6px; }
 .compact-toggles { display: grid; gap: 6px; }
