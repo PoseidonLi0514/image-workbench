@@ -2,6 +2,9 @@
       "use strict";
 
       const BACKEND_WAIT_TIMEOUT_MS = 11 * 60 * 1000;
+      const BACKEND_API_BASE_URL = isLocalFrontend()
+        ? "http://127.0.0.1:3456"
+        : "https://imagebackend.78139191.xyz";
 
       const $ = (id) => document.getElementById(id);
       const els = {
@@ -329,7 +332,7 @@
           const run = activeRun();
           run.abortReason = "manual";
           if (run.backendJobId) {
-            fetch(`./api/jobs/${encodeURIComponent(run.backendJobId)}`, { method: "DELETE" }).catch(() => {});
+            fetch(backendApiUrl(`/api/jobs/${encodeURIComponent(run.backendJobId)}`), { method: "DELETE" }).catch(() => {});
           }
           if (run.controller) run.controller.abort();
         });
@@ -1468,11 +1471,11 @@
 
       async function submitBackendJob({ endpoint, apiKey, body, sessionId, started }) {
         const run = getRunState(sessionId);
-        appendEvent("POST /api/jobs?wait=1", sessionId);
+        appendEvent(`POST ${backendApiUrl("/api/jobs?wait=1")}`, sessionId);
         setStatus("后端任务运行中，等待模型返回", sessionId);
         const cancelBackendWaitTimeout = startBackendWaitTimeout(run);
         try {
-          const response = await fetch("./api/jobs?wait=1", {
+          const response = await fetch(backendApiUrl("/api/jobs?wait=1"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ endpoint, apiKey, request: body }),
@@ -1581,7 +1584,7 @@
       async function pollBackendJob(jobId, sessionId, started = performance.now()) {
         const run = getRunState(sessionId);
         while (run.isRunning && run.backendJobId === jobId) {
-          const response = await fetch(`./api/jobs/${encodeURIComponent(jobId)}`, {
+          const response = await fetch(backendApiUrl(`/api/jobs/${encodeURIComponent(jobId)}`), {
             signal: run.controller && run.controller.signal,
           });
           if (!response.ok) {
@@ -1647,6 +1650,14 @@
           .replace(/^Error:\s*/, "")
           .split(/\r?\n/)[0]
           .trim() || "请求失败";
+      }
+
+      function backendApiUrl(path) {
+        return `${BACKEND_API_BASE_URL}${path}`;
+      }
+
+      function isLocalFrontend() {
+        return location.hostname === "localhost" || location.hostname === "127.0.0.1";
       }
 
       async function readSse(response, sessionId) {

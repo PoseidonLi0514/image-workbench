@@ -1,65 +1,75 @@
 # Image Workbench
 
-Single-page image generation/editing workbench with an optional Cloudflare Pages Functions backend.
+Single-page image generation/editing workbench. The frontend is hosted by Cloudflare Pages, while backend job execution runs on a long-lived Node.js service.
 
-## Static Mode
+## Frontend
 
-Open `index.html` directly in a browser. Requests are sent from the browser to the configured API URL.
+Install dependencies:
 
-## Cloudflare Backend Mode
+```bash
+npm install
+```
 
-Deploy to Cloudflare Pages to enable backend jobs:
+Run the Pages frontend locally:
 
-1. Install dependencies:
+```bash
+npm run dev
+```
 
-   ```bash
-   npm install
-   ```
+Deploy the frontend:
 
-2. Create KV namespaces:
+```bash
+npm run deploy
+```
 
-   ```bash
-   npx wrangler kv namespace create IMAGE_WORKBENCH_JOBS
-   npx wrangler kv namespace create IMAGE_WORKBENCH_JOBS --preview
-   ```
+The UI defaults to `后端任务模式`. In production it sends backend job requests to:
 
-3. Replace the placeholder IDs in `wrangler.toml`.
+```text
+https://imagebackend.78139191.xyz
+```
 
-4. Bind an R2 bucket in `wrangler.toml`.
+When opened from `localhost` or `127.0.0.1`, it uses:
 
-   This repo currently uses the existing `lobechat` bucket:
+```text
+http://127.0.0.1:3456
+```
 
-   ```toml
-   [[r2_buckets]]
-   binding = "IMAGE_WORKBENCH_R2"
-   bucket_name = "lobechat"
-   preview_bucket_name = "lobechat"
-   ```
+If API URL and API Key are left blank in the browser, the Node backend uses its server-side `BASEURL` and `APIKEY` environment variables. Browser-filled values override those server defaults for that request.
 
-5. Set backend API environment variables in Cloudflare:
+## Node Backend
 
-   ```bash
-   npx wrangler pages secret put APIKEY --project-name image-workbench
-   npx wrangler pages secret put BASEURL --project-name image-workbench
-   ```
+The backend listens on `127.0.0.1:3456`; your reverse proxy should terminate SSL and forward `https://imagebackend.78139191.xyz` to that local port.
 
-   `IMAGE_WORKBENCH_API_KEY` or `OPENAI_API_KEY` also work as fallback key variable names.
-   `IMAGE_WORKBENCH_BASE_URL`, `OPENAI_BASE_URL`, or `BASE_URL` also work as fallback base URL variable names.
+Create `backend/.env` from `backend/.env.example` and set:
 
-6. Run locally through Pages Functions:
+```bash
+HOST=127.0.0.1
+PORT=3456
+PUBLIC_BASE_URL=https://imagebackend.78139191.xyz
+BASEURL=https://api.xn--6iqtf2zx5kzwsi0c2u8b8sj.cn
+APIKEY=...
+CF_ACCOUNT_ID=...
+CF_API_TOKEN=...
+D1_DATABASE_ID=...
+```
 
-   ```bash
-   npm run dev
-   ```
+Create a D1 database and run the schema:
 
-7. Deploy:
+```bash
+npx wrangler d1 create image_workbench_jobs
+npm run backend:migrate
+```
 
-   ```bash
-   npm run deploy
-   ```
+Run directly:
 
-The UI defaults to backend mode. If API URL and API Key are left blank, requests use the server-provided `BASEURL` and `APIKEY`. If either field is filled in the browser, that value overrides the server variable for that request and is saved in the current browser by default.
+```bash
+npm run backend
+```
 
-When the UI's `后端任务模式` checkbox is enabled in settings, requests are submitted to `/api/jobs?wait=1`. The Pages Function keeps that request open until the model request finishes, stores task status and lightweight response metadata in KV, and returns the completed job to the browser. The plain `/api/jobs` endpoint is still available for compatibility, but long image generations should not rely on detached `waitUntil()` background work.
+Run under pm2:
 
-Generated image base64 payloads are extracted from the model response and stored in R2 under `image-workbench/jobs/...`. KV keeps only R2 keys and `/api/assets?key=...` URLs for those images.
+```bash
+npm run backend:pm2:start
+```
+
+Generated image base64 payloads are extracted from model responses and stored on local disk under `backend-data/assets/`. D1 stores job state, errors, events, and response metadata with image URLs pointing back to the Node backend.
