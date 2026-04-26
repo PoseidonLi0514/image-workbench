@@ -104,7 +104,28 @@ async function runJob(store, env, id, payload) {
 
     const contentType = response.headers.get("content-type") || "";
     if (requestBody.stream && response.body && !contentType.includes("application/json")) {
-      await readSse(store, env, id, response);
+      const streamResult = await readSseResponse(response);
+      if (streamResult.failedResponse || streamResult.error) {
+        await patchJob(store, id, {
+          status: "failed",
+          statusLabel: "请求失败",
+          response: streamResult.failedResponse,
+          outputText: streamResult.outputText,
+          error: streamResult.error || "Stream failed",
+        });
+        return;
+      }
+      if (!streamResult.response) {
+        throw new Error("Stream ended without a completed response.");
+      }
+      const stored = await storeResponseAssets(env, id, streamResult.response);
+      await patchJob(store, id, {
+        status: "completed",
+        statusLabel: "完成",
+        response: stored,
+        outputText: extractResponseText(stored) || streamResult.outputText,
+        events: [{ at: new Date().toISOString(), line: `stream completed (${streamResult.eventCount} events)` }],
+      });
     } else {
       await patchJob(store, id, { statusLabel: "等待完整响应" });
       const data = await response.json();
@@ -142,11 +163,17 @@ function normalizeEndpoint(url) {
   return `${raw}/v1/responses`;
 }
 
-async function readSse(store, env, id, response) {
-  await patchJob(store, id, { statusLabel: "正在接收事件流" });
+async function readSseResponse(response) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  const state = {
+    eventCount: 0,
+    outputText: "",
+    response: null,
+    failedResponse: null,
+    error: "",
+  };
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -154,13 +181,14 @@ async function readSse(store, env, id, response) {
     const parts = buffer.split(/\r?\n\r?\n/);
     buffer = parts.pop() || "";
     for (const part of parts) {
-      await handleSseBlock(store, env, id, part);
+      handleSseBlock(state, part);
     }
   }
-  if (buffer.trim()) await handleSseBlock(store, env, id, buffer);
+  if (buffer.trim()) handleSseBlock(state, buffer);
+  return state;
 }
 
-async function handleSseBlock(store, env, id, block) {
+function handleSseBlock(state, block) {
   let eventName = "";
   const dataLines = [];
   for (const line of block.split(/\r?\n/)) {
@@ -170,7 +198,6 @@ async function handleSseBlock(store, env, id, block) {
   if (!dataLines.length) return;
   const text = dataLines.join("\n");
   if (text === "[DONE]") {
-    await appendEvent(store, id, "done");
     return;
   }
 
@@ -178,39 +205,33 @@ async function handleSseBlock(store, env, id, block) {
   try {
     data = JSON.parse(text);
   } catch {
-    await appendEvent(store, id, `${eventName || "event"} ${text.slice(0, 500)}`);
+    state.eventCount += 1;
     return;
   }
 
   const type = data.type || eventName || "event";
-  await appendEvent(store, id, type);
+  state.eventCount += 1;
 
   if (type === "response.output_text.delta" && data.delta) {
-    const job = await getJob(store, id);
-    await patchJob(store, id, {
-      outputText: `${job && job.outputText || ""}${data.delta}`,
-      statusLabel: "正在生成文本",
-    });
+    state.outputText += data.delta;
   } else if (type === "response.output_text.done" && typeof data.text === "string") {
-    await patchJob(store, id, { outputText: data.text, statusLabel: "文本已生成" });
-  } else if (type === "response.image_generation_call.partial_image") {
-    await patchJob(store, id, { statusLabel: "正在生成图片" });
+    state.outputText = data.text;
   } else if (type === "response.completed" && data.response) {
-    const stored = await storeResponseAssets(env, id, data.response);
-    await patchJob(store, id, {
-      status: "completed",
-      statusLabel: "完成",
-      response: stored,
-      outputText: extractResponseText(stored),
-    });
-  } else if ((type === "response.failed" || type === "response.incomplete") && data.response) {
-    await patchJob(store, id, {
-      status: "failed",
-      statusLabel: "请求失败",
-      response: data.response,
-      error: data.response.error ? JSON.stringify(data.response.error) : type,
-    });
+    state.response = data.response;
+  } else if (type === "response.failed" || type === "response.incomplete") {
+    state.failedResponse = data.response || null;
+    state.error = extractStreamError(data, type);
+  } else if (data.error) {
+    state.error = extractStreamError(data, type);
   }
+}
+
+function extractStreamError(data, fallback) {
+  if (!data || typeof data !== "object") return fallback;
+  if (typeof data.error === "string") return data.error;
+  if (data.error) return JSON.stringify(data.error);
+  if (data.response && data.response.error) return JSON.stringify(data.response.error);
+  return fallback;
 }
 
 function extractResponseText(response) {
