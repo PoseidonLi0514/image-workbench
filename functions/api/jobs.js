@@ -1,5 +1,6 @@
 const JOB_TTL_SECONDS = 60 * 60 * 24 * 7;
 const MAX_EVENTS = 200;
+const UPSTREAM_TIMEOUT_MS = 4 * 60 * 1000;
 const R2_PREFIX = "image-workbench/jobs";
 
 export async function onRequestPost(context) {
@@ -82,6 +83,7 @@ async function runJob(store, env, id, payload) {
     return;
   }
 
+  const upstreamTimeout = createTimeout(UPSTREAM_TIMEOUT_MS);
   try {
     await patchJob(store, id, { status: "running", statusLabel: "正在提交模型请求" });
     const requestBody = { ...payload.request, stream: false };
@@ -94,6 +96,7 @@ async function runJob(store, env, id, payload) {
         "Accept": requestBody.stream ? "text/event-stream, application/json" : "application/json",
       },
       body: JSON.stringify(requestBody),
+      signal: upstreamTimeout.signal,
     });
 
     await appendEvent(store, id, `HTTP ${response.status} ${response.statusText}`);
@@ -139,6 +142,7 @@ async function runJob(store, env, id, payload) {
       });
     } else {
       await patchJob(store, id, { statusLabel: "等待完整响应" });
+      await appendEvent(store, id, "waiting for full response body");
       const data = await response.json();
       const stored = await storeResponseAssets(env, id, data);
       if (!hasVisibleOutput(stored)) {
@@ -159,12 +163,32 @@ async function runJob(store, env, id, payload) {
       });
     }
   } catch (error) {
+    await appendEvent(store, id, `error ${errorMessage(error)}`);
     await patchJob(store, id, {
       status: "failed",
       statusLabel: "请求失败",
-      error: String(error && (error.stack || error.message) || error),
+      error: errorMessage(error),
     });
+  } finally {
+    upstreamTimeout.cancel();
   }
+}
+
+function createTimeout(ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort(new Error(`上游请求超过 ${Math.round(ms / 1000)} 秒未完成`));
+  }, ms);
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timer),
+  };
+}
+
+function errorMessage(error) {
+  if (error && error.name === "AbortError") return "上游请求超时，模型接口没有在限定时间内返回完整结果。";
+  if (error && error.message) return String(error.message);
+  return String(error || "请求失败");
 }
 
 function resolveEndpoint(env, payloadEndpoint) {
