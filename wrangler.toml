@@ -3,7 +3,7 @@ compatibility_date = "2026-04-26"
 pages_build_output_dir = "."
 
 [vars]
-BASEURL = "https://api.xdedm.top"
+BASEURL = "https://api.xn--6iqtf2zx5kzwsi0c2u8b8sj.cn"
 
 # Create a KV namespace and replace the IDs before deploying:
 #   npx wrangler kv namespace create IMAGE_WORKBENCH_JOBS
