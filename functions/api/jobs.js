@@ -3,6 +3,7 @@ const MAX_EVENTS = 200;
 const UPSTREAM_TIMEOUT_MS = 10 * 60 * 1000;
 const JOB_HEARTBEAT_MS = 15 * 1000;
 const JOB_STALE_MS = 90 * 1000;
+const JOB_STREAM_PING_MS = 10 * 1000;
 const R2_PREFIX = "image-workbench/jobs";
 
 export async function onRequestPost(context) {
@@ -36,13 +37,88 @@ export async function onRequestPost(context) {
 
   await putJob(store, job);
   if (shouldWaitForJob(context.request)) {
-    await runJob(store, context.env, id, payload);
-    const completedJob = await normalizeJobForRead(store, await getJob(store, id));
-    return json(completedJob || job);
+    return streamJob(store, context.env, id, payload, job);
   }
 
   context.waitUntil(runJob(store, context.env, id, payload));
   return json({ id, status: job.status, statusLabel: job.statusLabel, createdAt: job.createdAt });
+}
+
+function streamJob(store, env, id, payload, initialJob) {
+  const encoder = new TextEncoder();
+  let closed = false;
+  let interval = null;
+  let controllerRef = null;
+
+  function send(event, data) {
+    if (closed || !controllerRef) return;
+    try {
+      controllerRef.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+    } catch {
+      closed = true;
+    }
+  }
+
+  function close() {
+    if (closed) return;
+    closed = true;
+    if (interval) clearInterval(interval);
+    try {
+      controllerRef && controllerRef.close();
+    } catch {
+      // The client may already be gone.
+    }
+  }
+
+  async function sendCurrentJob() {
+    const job = await normalizeJobForRead(store, await getJob(store, id));
+    if (!job || closed) return null;
+    send("job", job);
+    if (isTerminalJob(job)) close();
+    return job;
+  }
+
+  const stream = new ReadableStream({
+    start(controller) {
+      controllerRef = controller;
+      send("job", initialJob);
+      interval = setInterval(() => {
+        send("ping", { at: new Date().toISOString() });
+        sendCurrentJob().catch((error) => {
+          send("error", { error: errorMessage(error) });
+        });
+      }, JOB_STREAM_PING_MS);
+
+      runJob(store, env, id, payload)
+        .then(() => sendCurrentJob())
+        .catch(async (error) => {
+          await appendEvent(store, id, `error ${errorMessage(error)}`);
+          await patchJob(store, id, {
+            status: "failed",
+            statusLabel: "请求失败",
+            error: errorMessage(error),
+          });
+          await sendCurrentJob();
+        })
+        .finally(close);
+    },
+    cancel() {
+      closed = true;
+      if (interval) clearInterval(interval);
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+    },
+  });
+}
+
+function isTerminalJob(job) {
+  return job && (job.status === "completed" || job.status === "failed" || job.status === "canceled");
 }
 
 export async function onRequestGet(context) {

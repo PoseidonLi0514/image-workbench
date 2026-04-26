@@ -1483,15 +1483,14 @@
             const text = await response.text();
             throw new Error(text || `Job HTTP ${response.status}`);
           }
+          const contentType = response.headers.get("content-type") || "";
+          if (response.body && contentType.includes("text/event-stream")) {
+            await readBackendJobStream(response, sessionId, started);
+            return;
+          }
           const job = await response.json();
           if (!job || !job.id) throw new Error("后端任务没有返回任务 ID");
-          run.backendJobId = job.id;
-          updateActiveTurn(sessionId, {
-            backendJobId: job.id,
-            backendResultHandled: false,
-            status: job.statusLabel || "后端任务已创建",
-            updatedAt: Date.now(),
-          }, true);
+          trackBackendJob(job, sessionId);
           const settled = await applyBackendJobUpdate(job, sessionId, started);
           if (!settled) await pollBackendJob(job.id, sessionId, started);
         } finally {
@@ -1511,6 +1510,72 @@
           }
         }, BACKEND_WAIT_TIMEOUT_MS);
         return () => clearTimeout(timer);
+      }
+
+      async function readBackendJobStream(response, sessionId, started) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let sawTerminalJob = false;
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split(/\r?\n\r?\n/);
+            buffer = parts.pop() || "";
+            for (const part of parts) {
+              if (await handleBackendJobStreamBlock(part, sessionId, started)) {
+                sawTerminalJob = true;
+                await reader.cancel().catch(() => {});
+                return;
+              }
+            }
+          }
+          if (buffer.trim() && await handleBackendJobStreamBlock(buffer, sessionId, started)) {
+            sawTerminalJob = true;
+          }
+          if (!sawTerminalJob) throw new Error("后端任务连接已断开，未收到最终结果。");
+        } catch (error) {
+          await reader.cancel().catch(() => {});
+          throw error;
+        }
+      }
+
+      async function handleBackendJobStreamBlock(block, sessionId, started) {
+        let eventName = "";
+        const dataLines = [];
+        for (const line of block.split(/\r?\n/)) {
+          if (line.startsWith("event:")) eventName = line.slice(6).trim();
+          else if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+        }
+        if (!dataLines.length || eventName === "ping") return false;
+        const dataText = dataLines.join("\n");
+        let data;
+        try {
+          data = JSON.parse(dataText);
+        } catch {
+          appendEvent(`${eventName || "backend"} ${dataText.slice(0, 500)}`, sessionId);
+          return false;
+        }
+        if (eventName === "error") {
+          throw new Error(cleanErrorMessage(data.error || "后端任务流失败"));
+        }
+        if (eventName && eventName !== "job") return false;
+        if (!data || !data.id) return false;
+        trackBackendJob(data, sessionId);
+        return applyBackendJobUpdate(data, sessionId, started);
+      }
+
+      function trackBackendJob(job, sessionId) {
+        const run = getRunState(sessionId);
+        run.backendJobId = job.id;
+        updateActiveTurn(sessionId, {
+          backendJobId: job.id,
+          backendResultHandled: false,
+          status: job.statusLabel || "后端任务已创建",
+          updatedAt: Date.now(),
+        }, true);
       }
 
       async function pollBackendJob(jobId, sessionId, started = performance.now()) {
