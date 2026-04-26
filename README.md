@@ -22,6 +22,8 @@ Deploy the frontend:
 npm run deploy
 ```
 
+The deploy script builds a static-only `dist/` directory containing just the frontend assets.
+
 The UI defaults to `后端任务模式`. In production it sends backend job requests directly to the Node backend:
 
 ```text
