@@ -2362,7 +2362,8 @@
         if (!state.allGallerySelecting) return;
         if (state.selectedGalleryIds.has(id)) state.selectedGalleryIds.delete(id);
         else state.selectedGalleryIds.add(id);
-        renderAllGallery();
+        updateGallerySelectionCard(id);
+        syncAllGallerySelection();
       }
 
       function toggleSelectAllGallery() {
@@ -2373,6 +2374,19 @@
           images.forEach((image) => state.selectedGalleryIds.add(image.id));
         }
         renderAllGallery();
+      }
+
+      function updateGallerySelectionCard(id) {
+        const card = els.allGallery.querySelector(`[data-image-id="${cssEscape(id)}"]`);
+        if (!card) return;
+        const selected = state.selectedGalleryIds.has(id);
+        card.classList.toggle("selected", selected);
+        const button = card.querySelector(".select-image-btn");
+        if (!button) return;
+        button.title = selected ? "取消选择" : "选择";
+        button.setAttribute("aria-label", button.title);
+        button.setAttribute("aria-pressed", selected ? "true" : "false");
+        button.innerHTML = `<svg><use href="${selected ? "#i-check-square" : "#i-square"}"></use></svg>`;
       }
 
       async function deleteSelectedGalleryImages() {
