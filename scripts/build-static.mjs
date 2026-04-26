@@ -7,7 +7,7 @@ const dist = path.join(root, "dist");
 await fs.rm(dist, { recursive: true, force: true });
 await fs.mkdir(dist, { recursive: true });
 
-for (const file of ["index.html", "app.js", "styles.css"]) {
+for (const file of ["index.html", "404.html", "app.js", "styles.css"]) {
   await fs.copyFile(path.join(root, file), path.join(dist, file));
 }
 
