@@ -1478,7 +1478,7 @@
           const response = await fetch(backendApiUrl("/api/jobs?wait=1"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ endpoint, apiKey, request: body }),
+            body: JSON.stringify({ request: body }),
             signal: run.controller.signal,
           });
           appendEvent(`JOB HTTP ${response.status} ${response.statusText}`, sessionId);
