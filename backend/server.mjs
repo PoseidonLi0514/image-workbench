@@ -58,7 +58,7 @@ async function handleRequest(request, response) {
     return;
   }
   if (url.pathname === "/api/jobs" && request.method === "GET") {
-    await handleListJobs(response);
+    await handleListJobs(response, url);
     return;
   }
   const jobMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)$/);
@@ -87,6 +87,7 @@ async function handleCreateJob(request, response, url) {
   const now = new Date().toISOString();
   const job = {
     id,
+    sessionId: String(payload.sessionId || ""),
     status: "queued",
     statusLabel: "排队中",
     createdAt: now,
@@ -154,13 +155,20 @@ function streamJob(response, id, payload, initialJob) {
     });
 }
 
-async function handleListJobs(response) {
-  const result = await d1.query(
-    "SELECT id, status, status_label, created_at, updated_at FROM jobs ORDER BY updated_at DESC LIMIT 50",
-  );
+async function handleListJobs(response, url) {
+  const sessionId = String(url.searchParams.get("sessionId") || "");
+  const result = sessionId
+    ? await d1.query(
+      "SELECT id, session_id, status, status_label, created_at, updated_at FROM jobs WHERE session_id = ? ORDER BY updated_at DESC LIMIT 50",
+      [sessionId],
+    )
+    : await d1.query(
+      "SELECT id, session_id, status, status_label, created_at, updated_at FROM jobs ORDER BY updated_at DESC LIMIT 50",
+    );
   writeJson(response, {
     jobs: (result.results || []).map((row) => ({
       id: row.id,
+      sessionId: row.session_id || "",
       status: row.status,
       statusLabel: row.status_label,
       createdAt: row.created_at,
@@ -548,9 +556,10 @@ async function getJob(id) {
 async function putJob(job) {
   const normalized = normalizeJob(job);
   await d1.query(
-    `INSERT INTO jobs (id, status, status_label, created_at, updated_at, output_text, response_json, error, events_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO jobs (id, session_id, status, status_label, created_at, updated_at, output_text, response_json, error, events_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
+       session_id = excluded.session_id,
        status = excluded.status,
        status_label = excluded.status_label,
        updated_at = excluded.updated_at,
@@ -560,6 +569,7 @@ async function putJob(job) {
        events_json = excluded.events_json`,
     [
       normalized.id,
+      normalized.sessionId,
       normalized.status,
       normalized.statusLabel,
       normalized.createdAt,
@@ -606,6 +616,7 @@ async function failJob(id, error) {
 function rowToJob(row) {
   return normalizeJob({
     id: row.id,
+    sessionId: row.session_id || "",
     status: row.status,
     statusLabel: row.status_label,
     createdAt: row.created_at,
@@ -620,6 +631,7 @@ function rowToJob(row) {
 function normalizeJob(job) {
   return {
     id: String(job.id || ""),
+    sessionId: String(job.sessionId || job.session_id || ""),
     status: String(job.status || "queued"),
     statusLabel: String(job.statusLabel || job.status_label || ""),
     createdAt: String(job.createdAt || job.created_at || new Date().toISOString()),

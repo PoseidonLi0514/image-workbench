@@ -585,6 +585,8 @@
         renderGallery();
         updateRequestPreview();
         updateSaveDirStatus();
+        syncActiveRunControls();
+        els.prompt.focus();
       }
 
       function switchSession(id) {
@@ -1478,7 +1480,7 @@
           const response = await fetch(backendApiUrl("/api/jobs?wait=1"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ request: body }),
+            body: JSON.stringify({ sessionId, request: body }),
             signal: run.controller.signal,
           });
           appendEvent(`JOB HTTP ${response.status} ${response.statusText}`, sessionId);
@@ -1719,9 +1721,10 @@
       }
 
       async function handleFinalResponse(response, showRaw, sessionId) {
-        if (showRaw) els.rawResponse.textContent = safeStringify(response);
-        if (response && response.id) updateRunMeta(response);
-        const parsed = extractResponse(response);
+        const isActive = !sessionId || sessionId === state.activeSessionId;
+        if (isActive && showRaw) els.rawResponse.textContent = safeStringify(response);
+        if (isActive && response && response.id) updateRunMeta(response);
+        const parsed = extractResponse(response, sessionId);
         if (parsed.text) replaceText(parsed.text, sessionId);
         for (const image of parsed.images) {
           await addGeneratedImage(image, sessionId);
@@ -1729,6 +1732,7 @@
       }
 
       async function handleOutputItem(item, showImage, sessionId) {
+        const run = getRunState(sessionId);
         if (item.type === "message") {
           const text = extractTextFromMessage(item);
           if (text) appendText(text, sessionId);
@@ -1740,7 +1744,7 @@
             dataUrl: item.result_url || "",
             mime: mimeFromFormat(item.output_format),
             ext: item.output_format || "png",
-            prompt: els.prompt.value.trim(),
+            prompt: run.currentPrompt || "",
             revisedPrompt: item.revised_prompt || "",
             size: item.size || "",
             quality: item.quality || "",
@@ -1752,7 +1756,8 @@
         }
       }
 
-      function extractResponse(response) {
+      function extractResponse(response, sessionId) {
+        const run = getRunState(sessionId);
         const result = { text: "", images: [] };
         if (!response || typeof response !== "object") return result;
         if (typeof response.output_text === "string") result.text += response.output_text;
@@ -1768,7 +1773,7 @@
               dataUrl: item.result_url || "",
               mime: mimeFromFormat(item.output_format),
               ext: item.output_format || "png",
-              prompt: els.prompt.value.trim(),
+              prompt: run.currentPrompt || "",
               revisedPrompt: item.revised_prompt || "",
               size: item.size || "",
               quality: item.quality || "",

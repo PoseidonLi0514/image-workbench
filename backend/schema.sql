@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL,
   status_label TEXT NOT NULL,
   created_at TEXT NOT NULL,
@@ -12,3 +13,4 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_updated_at ON jobs(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_status_updated_at ON jobs(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_jobs_session_updated_at ON jobs(session_id, updated_at DESC);
