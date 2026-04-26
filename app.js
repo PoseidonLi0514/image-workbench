@@ -1,6 +1,8 @@
 (() => {
       "use strict";
 
+      const BACKEND_WAIT_TIMEOUT_MS = 11 * 60 * 1000;
+
       const $ = (id) => document.getElementById(id);
       const els = {
         apiUrl: $("apiUrl"),
@@ -150,6 +152,7 @@
             runTimer: null,
             lastStatus: "就绪",
             backendJobId: "",
+            abortReason: "",
           };
         }
         return state.runStates[id];
@@ -324,6 +327,7 @@
         els.sendBtn.addEventListener("click", sendRequest);
         els.abortBtn.addEventListener("click", async () => {
           const run = activeRun();
+          run.abortReason = "manual";
           if (run.backendJobId) {
             fetch(`./api/jobs/${encodeURIComponent(run.backendJobId)}`, { method: "DELETE" }).catch(() => {});
           }
@@ -1364,6 +1368,7 @@
         const promptText = els.prompt.value.trim();
         const body = buildRequestBody();
         run.controller = new AbortController();
+        run.abortReason = "";
         startFrontendTurn(promptText, state.attachments, sessionId);
         els.prompt.value = "";
         els.prompt.style.height = "";
@@ -1418,7 +1423,19 @@
           const seconds = ((performance.now() - started) / 1000).toFixed(1);
           setStatus(`完成，用时 ${seconds}s`, sessionId);
         } catch (error) {
-          if (error.name === "AbortError") {
+          if (run.abortReason === "timeout") {
+            run.backendJobId = "";
+            const message = "后端请求超过 11 分钟仍未完成，可能已被网络或 Cloudflare 截断。";
+            updateActiveTurn(sessionId, {
+              backendJobId: "",
+              backendResultHandled: true,
+              status: "请求超时",
+              updatedAt: Date.now(),
+            }, true);
+            setStatus("请求超时", sessionId);
+            appendEvent(message, sessionId);
+            toast(message, "error");
+          } else if (error.name === "AbortError") {
             run.backendJobId = "";
             updateActiveTurn(sessionId, {
               backendJobId: "",
@@ -1445,6 +1462,7 @@
         } finally {
           setRunning(false, sessionId);
           run.controller = null;
+          run.abortReason = "";
         }
       }
 
@@ -1452,28 +1470,47 @@
         const run = getRunState(sessionId);
         appendEvent("POST /api/jobs?wait=1", sessionId);
         setStatus("后端任务运行中，等待模型返回", sessionId);
-        const response = await fetch("./api/jobs?wait=1", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ endpoint, apiKey, request: body }),
-          signal: run.controller.signal,
-        });
-        appendEvent(`JOB HTTP ${response.status} ${response.statusText}`, sessionId);
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(text || `Job HTTP ${response.status}`);
+        const cancelBackendWaitTimeout = startBackendWaitTimeout(run);
+        try {
+          const response = await fetch("./api/jobs?wait=1", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ endpoint, apiKey, request: body }),
+            signal: run.controller.signal,
+          });
+          appendEvent(`JOB HTTP ${response.status} ${response.statusText}`, sessionId);
+          if (!response.ok) {
+            const text = await response.text();
+            throw new Error(text || `Job HTTP ${response.status}`);
+          }
+          const job = await response.json();
+          if (!job || !job.id) throw new Error("后端任务没有返回任务 ID");
+          run.backendJobId = job.id;
+          updateActiveTurn(sessionId, {
+            backendJobId: job.id,
+            backendResultHandled: false,
+            status: job.statusLabel || "后端任务已创建",
+            updatedAt: Date.now(),
+          }, true);
+          const settled = await applyBackendJobUpdate(job, sessionId, started);
+          if (!settled) await pollBackendJob(job.id, sessionId, started);
+        } finally {
+          cancelBackendWaitTimeout();
         }
-        const job = await response.json();
-        if (!job || !job.id) throw new Error("后端任务没有返回任务 ID");
-        run.backendJobId = job.id;
-        updateActiveTurn(sessionId, {
-          backendJobId: job.id,
-          backendResultHandled: false,
-          status: job.statusLabel || "后端任务已创建",
-          updatedAt: Date.now(),
-        }, true);
-        const settled = await applyBackendJobUpdate(job, sessionId, started);
-        if (!settled) await pollBackendJob(job.id, sessionId, started);
+      }
+
+      function startBackendWaitTimeout(run) {
+        const timer = setTimeout(() => {
+          if (!run.controller || run.controller.signal.aborted) return;
+          run.abortReason = "timeout";
+          const error = new Error("Backend wait timed out");
+          try {
+            run.controller.abort(error);
+          } catch {
+            run.controller.abort();
+          }
+        }, BACKEND_WAIT_TIMEOUT_MS);
+        return () => clearTimeout(timer);
       }
 
       async function pollBackendJob(jobId, sessionId, started = performance.now()) {
