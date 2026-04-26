@@ -104,6 +104,7 @@ async function runJob(store, env, id, payload) {
 
     const contentType = response.headers.get("content-type") || "";
     if (requestBody.stream && response.body && !contentType.includes("application/json")) {
+      await patchJob(store, id, { statusLabel: "等待生成完成" });
       const streamResult = await readSseResponse(response);
       if (streamResult.failedResponse || streamResult.error) {
         await patchJob(store, id, {
