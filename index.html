@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Image Workbench</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <svg aria-hidden="true" class="hidden">
+    <symbol id="i-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"></path>
+      <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"></path>
+    </symbol>
+    <symbol id="i-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 2L11 13"></path><path d="M22 2l-7 20-4-9-9-4 20-7z"></path>
+    </symbol>
+    <symbol id="i-image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="9" cy="9" r="2"></circle><path d="M21 15l-3.1-3.1a2 2 0 0 0-2.8 0L6 21"></path>
+    </symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2"></rect><rect x="2" y="2" width="13" height="13" rx="2"></rect>
+    </symbol>
+    <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="M7 10l5 5 5-5"></path><path d="M12 15V3"></path>
+    </symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 15H6L5 6"></path>
+    </symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 5v14"></path><path d="M5 12h14"></path>
+    </symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+    </symbol>
+    <symbol id="i-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="7.5" cy="15.5" r="5.5"></circle><path d="M12 12l8-8"></path><path d="M17 5l2 2"></path><path d="M15 7l2 2"></path>
+    </symbol>
+    <symbol id="i-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M16 18l6-6-6-6"></path><path d="M8 6l-6 6 6 6"></path>
+    </symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M18 6L6 18"></path><path d="M6 6l12 12"></path>
+    </symbol>
+    <symbol id="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 13a5 5 0 0 0 7.1 0l2.8-2.8a5 5 0 0 0-7.1-7.1L11 4.9"></path><path d="M14 11a5 5 0 0 0-7.1 0l-2.8 2.8a5 5 0 0 0 7.1 7.1L13 19.1"></path>
+    </symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+    </symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 19V5"></path><path d="M5 12l7-7 7 7"></path>
+    </symbol>
+    <symbol id="i-arrow-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 5v14"></path><path d="M19 12l-7 7-7-7"></path>
+    </symbol>
+    <symbol id="i-sidebar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M9 3v18"></path>
+    </symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 18l6-6-6-6"></path>
+    </symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+    </symbol>
+    <symbol id="i-more" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle>
+    </symbol>
+    <symbol id="i-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2.8l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.6l-5.8 3.1 1.1-6.5-4.7-4.6 6.5-.9L12 2.8z"></path>
+    </symbol>
+  </svg>
+
+  <div class="app">
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="brand">
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" title="切换侧边栏">
+          <svg><use href="#i-sidebar"></use></svg>
+        </button>
+        <div class="brand-mark"><svg><use href="#i-spark"></use></svg></div>
+        <h1>Image Workbench</h1>
+      </div>
+      <div class="top-actions">
+        <button class="overflow-btn" id="overflowMenuBtn" type="button" title="更多操作">
+          <svg><use href="#i-more"></use></svg>
+        </button>
+        <div class="overflow-menu" id="overflowMenu">
+          <button class="menu-item" id="saveDirBtn" type="button"><svg><use href="#i-download"></use></svg><span>保存目录</span></button>
+          <button class="menu-item" id="saveSessionDirBtn" type="button"><svg><use href="#i-image"></use></svg><span>写入目录</span></button>
+          <button class="menu-item" id="exportSessionBtn" type="button"><svg><use href="#i-download"></use></svg><span>导出 ZIP</span></button>
+          <div class="menu-divider"></div>
+          <button class="menu-item" id="loadJsonBtn" type="button"><svg><use href="#i-code"></use></svg><span>导入 JSON</span></button>
+          <button class="menu-item" id="clearRunBtn" type="button"><svg><use href="#i-x"></use></svg><span>清空输出</span></button>
+          <button class="menu-item danger" id="clearGalleryBtn" type="button"><svg><use href="#i-trash"></use></svg><span>清空图库</span></button>
+        </div>
+      </div>
+    </header>
+
+    <!-- App Body -->
+    <div class="app-body">
+      <!-- Sidebar -->
+      <aside class="sidebar sidebar-collapsed" id="sessionsAside">
+        <div class="sidebar-inner">
+          <div class="sidebar-head">
+            <h2><svg><use href="#i-spark"></use></svg> Sessions</h2>
+            <button class="btn icon" id="newSessionBtn" type="button" title="新建 Session">
+              <svg><use href="#i-plus"></use></svg>
+            </button>
+          </div>
+          <div class="session-list-wrap">
+            <div class="session-list" id="sessionList"></div>
+          </div>
+          <div class="sidebar-section">
+            <div class="sidebar-section-title">快捷设置</div>
+            <div class="stack">
+              <div class="field">
+                <label for="model">Model</label>
+                <input id="model" list="modelList" spellcheck="false" value="gpt-5.4">
+                <datalist id="modelList">
+                  <option value="gpt-5.4"></option>
+                  <option value="gpt-5.4-image"></option>
+                  <option value="gpt-5.2"></option>
+                  <option value="gpt-5.1"></option>
+                </datalist>
+              </div>
+              <div class="field">
+                <label for="reasoningEffort">Reasoning</label>
+                <select id="reasoningEffort">
+                  <option value="none">none</option>
+                  <option value="low">low</option>
+                  <option value="medium">medium</option>
+                  <option value="high">high</option>
+                  <option value="xhigh">xhigh</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="imageSize">Size</label>
+                <select id="imageSize">
+                  <option value="auto">auto</option>
+                  <option value="1024x1024">1:1 1024*1024 1K 方图</option>
+                  <option value="1536x1024">3:2 1536*1024 横图</option>
+                  <option value="1024x1536">2:3 1024*1536 竖图</option>
+                  <option value="2048x2048">1:1 2048*2048 2K 方图</option>
+                  <option value="2048x1152">16:9 2048*1152 2K 横图</option>
+                  <option value="2048x3072">2:3 2048*3072 2K 竖图</option>
+                  <option value="768x1024">3:4 768*1024 1K 竖图</option>
+                  <option value="1536x2048">3:4 1536*2048 2K 竖图</option>
+                  <option value="3840x2160">16:9 3840*2160 4K 横图</option>
+                  <option value="2160x3840">9:16 2160*3840 4K 竖图</option>
+                  <option value="custom">custom</option>
+                </select>
+              </div>
+              <div class="field hidden" id="customSizeField">
+                <label for="customSize">Custom size</label>
+                <input id="customSize" spellcheck="false" placeholder="WIDTHxHEIGHT">
+                <div class="meta" id="sizeHint"></div>
+              </div>
+              <div class="field">
+                <label for="imageQuality">Quality</label>
+                <select id="imageQuality">
+                  <option value="auto">auto</option>
+                  <option value="low">low</option>
+                  <option value="medium" selected>medium</option>
+                  <option value="high">high</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <details class="sidebar-section">
+            <summary class="sidebar-section-title">连接</summary>
+            <div class="stack">
+              <div class="field">
+                <label for="apiUrl">API URL</label>
+                <input id="apiUrl" autocomplete="off" spellcheck="false" value="https://api.xdedm.top">
+              </div>
+              <div class="field">
+                <label for="apiKey">API Key</label>
+                <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-...">
+              </div>
+              <label class="check">
+                <input id="rememberKey" type="checkbox">
+                <span>记住 key</span>
+              </label>
+              <div class="meta" id="saveDirStatus"><span class="chip">未选择保存目录</span></div>
+            </div>
+          </details>
+        </div>
+      </aside>
+
+      <!-- Chat Main -->
+      <main class="chat-main" id="chatMain">
+        <div class="chat-tabs">
+          <button class="active" id="tabChat" type="button">对话</button>
+          <button id="tabGallery" type="button">图库 <span id="galleryMeta"></span></button>
+          <button id="tabAllGallery" type="button">全部图库</button>
+          <button id="tabFavoriteGallery" type="button">收藏图库</button>
+        </div>
+        <div class="chat-scroll" id="outputArea">
+          <div class="empty">发送消息开始生成图片</div>
+        </div>
+        <div class="gallery-view hidden" id="galleryView">
+          <div class="gallery" id="gallery"></div>
+        </div>
+        <div class="gallery-view hidden" id="allGalleryView">
+          <div class="gallery" id="allGallery"></div>
+        </div>
+        <div class="gallery-view hidden" id="favoriteGalleryView">
+          <div class="gallery" id="favoriteGallery"></div>
+        </div>
+        <div class="composer-bar">
+          <div class="composer-bar-inner">
+            <div class="composer-attachments" id="attachments"></div>
+            <div class="composer-input-row">
+              <button class="composer-icon-btn" id="pickFileBtn" type="button" title="添加图片"><svg><use href="#i-plus"></use></svg></button>
+              <input class="hidden" id="fileInput" type="file" accept="image/*" multiple>
+              <div class="segmented" id="modeSegmented">
+                <button class="active" id="modeGenerate" type="button">生成</button>
+                <button id="modeEdit" type="button">修改</button>
+              </div>
+              <textarea id="prompt" rows="1" spellcheck="false" placeholder="描述你想生成的图片..."></textarea>
+              <button class="composer-icon-btn" id="paramsToggleBtn" type="button" title="参数设置"><svg><use href="#i-settings"></use></svg></button>
+              <button id="abortBtn" type="button" disabled title="停止请求"><svg><use href="#i-stop"></use></svg></button>
+              <button id="sendBtn" type="button" title="发送请求 (Ctrl+Enter)"><svg><use href="#i-send"></use></svg></button>
+            </div>
+            <details class="system-prompt-details">
+              <summary>System Prompt</summary>
+              <input id="systemPrompt" value="You are a helpful image assistant." spellcheck="false">
+            </details>
+          </div>
+          <button class="btn sm ghost hidden" id="removeImagesBtn" type="button" title="移除输入图片"><svg><use href="#i-trash"></use></svg> 移除图片</button>
+        </div>
+        <div class="hidden" id="dropzone" tabindex="-1" role="button"></div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Parameters Drawer -->
+  <div class="params-drawer" id="paramsDrawer">
+    <div class="params-drawer-head">
+      <h2>参数设置</h2>
+      <button class="btn icon" id="paramsCloseBtn" type="button" title="关闭"><svg><use href="#i-x"></use></svg></button>
+    </div>
+    <div class="params-drawer-body">
+      <div class="params-section"><h3>模型</h3>
+        <div class="params-grid">
+          <div class="field"><label for="maxTokens">Max tokens</label><input id="maxTokens" type="number" min="1" step="1" placeholder="auto"></div>
+          <div class="field"><label for="serviceTier">Tier</label><select id="serviceTier"><option value="">auto</option><option value="default">default</option><option value="priority">priority</option></select></div>
+        </div>
+      </div>
+      <div class="params-section"><h3>图像</h3>
+        <div class="params-grid">
+          <div class="field"><label for="moderation">Moderation</label><select id="moderation"><option value="auto">auto</option><option value="low">low</option></select></div>
+          <div class="field"><label for="outputFormat">Format</label><select id="outputFormat"><option value="png">png</option><option value="jpeg">jpeg</option><option value="webp">webp</option></select></div>
+          <div class="field"><label for="imageAction">Action</label><select id="imageAction"><option value="auto">auto</option><option value="generate">generate</option><option value="edit">edit</option></select></div>
+          <div class="field field-full"><label for="outputCompression">Compression</label><div class="inline-range"><input id="outputCompression" type="range" min="0" max="100" value="100"><output id="compressionValue">100</output></div></div>
+        </div>
+      </div>
+      <div class="params-section"><h3>行为</h3>
+        <div class="toggle-row">
+          <label class="check"><input id="streamMode" type="checkbox" checked><span>Stream events</span></label>
+          <label class="check"><input id="autoDownload" type="checkbox"><span>自动下载</span></label>
+          <label class="check"><input id="storeResponse" type="checkbox"><span>store: true</span></label>
+          <label class="check"><input id="preservePrompt" type="checkbox" checked><span>保持 prompt 原样</span></label>
+          <label class="check"><input id="transparentMode" type="checkbox"><span>透明模式</span></label>
+        </div>
+        <div class="transparent-row hidden" id="transparentControls">
+          <div class="field"><label for="keyColor">Key color</label><input id="keyColor" type="color" value="#00ff00"></div>
+          <div class="field"><label for="chromaTolerance">Tolerance</label><div class="inline-range"><input id="chromaTolerance" type="range" min="1" max="180" value="36"><output id="toleranceValue">36</output></div></div>
+        </div>
+      </div>
+      <div class="params-section"><h3>Debug</h3>
+        <div class="stack">
+          <details class="details-panel"><summary><span><svg><use href="#i-code"></use></svg> 请求体</span></summary><div class="panel-body stack"><button class="btn" id="copyRequestBtn" type="button"><svg><use href="#i-copy"></use></svg><span>复制</span></button><pre class="codebox" id="requestPreview"></pre></div></details>
+          <details class="details-panel"><summary><span><svg><use href="#i-code"></use></svg> 事件日志</span></summary><div class="panel-body stack"><pre class="codebox" id="eventLog"></pre><pre class="codebox" id="rawResponse"></pre></div></details>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="params-overlay" id="paramsOverlay"></div>
+  <div class="hidden"><div id="statusText"></div><div id="meter"></div><div id="runMeta"></div></div>
+
+  <dialog id="imageDialog">
+    <div class="modal-head"><h3 class="modal-title" id="modalTitle">Image</h3><button class="btn icon" id="closeModalBtn" type="button" title="关闭"><svg><use href="#i-x"></use></svg></button></div>
+    <div class="modal-body">
+      <img class="modal-image" id="modalImage" alt="">
+      <aside class="modal-side">
+        <div class="button-row">
+          <button class="btn" id="modalCopyBtn" type="button"><svg><use href="#i-copy"></use></svg><span>复制</span></button>
+          <button class="btn" id="modalDownloadBtn" type="button"><svg><use href="#i-download"></use></svg><span>下载</span></button>
+          <button class="btn" id="modalUseBtn" type="button"><svg><use href="#i-plus"></use></svg><span>输入</span></button>
+        </div>
+        <div class="meta" id="modalMeta"></div>
+        <pre class="codebox" id="modalPrompt"></pre>
+      </aside>
+    </div>
+  </dialog>
+
+  <dialog id="jsonDialog">
+    <div class="modal-head"><h3 class="modal-title">导入响应 JSON</h3><button class="btn icon" id="closeJsonBtn" type="button" title="关闭"><svg><use href="#i-x"></use></svg></button></div>
+    <div class="modal-body">
+      <div class="field"><label for="jsonInput">JSON</label><textarea id="jsonInput" spellcheck="false" style="min-height:420px"></textarea></div>
+      <aside class="modal-side"><button class="btn primary" id="importJsonBtn" type="button"><svg><use href="#i-code"></use></svg><span>导入</span></button></aside>
+    </div>
+  </dialog>
+
+  <dialog id="maskDialog">
+    <div class="modal-head"><h3 class="modal-title">Mask</h3><button class="btn icon" id="closeMaskBtn" type="button" title="关闭"><svg><use href="#i-x"></use></svg></button></div>
+    <div class="modal-body">
+      <div class="mask-stage"><img id="maskImage" alt=""><canvas id="maskCanvas"></canvas></div>
+      <aside class="modal-side">
+        <div class="field"><label for="maskBrushSize">Brush</label><div class="inline-range"><input id="maskBrushSize" type="range" min="4" max="120" value="36"><output id="maskBrushValue">36</output></div></div>
+        <div class="segmented"><button class="active" id="maskDrawBtn" type="button">画出修改区</button><button id="maskEraseBtn" type="button">橡皮</button></div>
+        <div class="button-row"><button class="btn" id="maskClearBtn" type="button"><svg><use href="#i-trash"></use></svg><span>清空</span></button><button class="btn primary" id="maskSaveBtn" type="button"><svg><use href="#i-download"></use></svg><span>保存 Mask</span></button></div>
+        <div class="meta"><span class="chip">画笔区域会作为模型要修改的区域</span></div>
+      </aside>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast"></div>
+  <script src="./app.js" defer></script>
+</body>
+</html>
