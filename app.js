@@ -1429,15 +1429,16 @@
             appendEvent("AbortError", sessionId);
           } else {
             run.backendJobId = "";
+            const statusLabel = error.statusLabel || "请求失败";
             if (useBackend) {
               updateActiveTurn(sessionId, {
                 backendJobId: "",
                 backendResultHandled: true,
-                status: "请求失败",
+                status: statusLabel,
                 updatedAt: Date.now(),
               }, true);
             }
-            setStatus("请求失败", sessionId);
+            setStatus(statusLabel, sessionId);
             appendEvent(String(error.stack || error.message || error), sessionId);
             toast(cleanErrorMessage(error.message || error), "error");
           }
@@ -1502,15 +1503,19 @@
             return;
           }
           if (job.status === "failed" || job.status === "canceled") {
-            const message = cleanErrorMessage(job.error || (job.status === "canceled" ? "任务已取消" : "后端任务失败"));
+            const statusLabel = job.status === "canceled" ? "已停止" : (job.statusLabel || "请求失败");
+            const message = cleanErrorMessage(job.error || (job.status === "canceled" ? "任务已取消" : statusLabel));
             run.backendJobId = "";
             updateActiveTurn(sessionId, {
               backendJobId: "",
               backendResultHandled: true,
-              status: job.status === "canceled" ? "已停止" : "请求失败",
+              status: statusLabel,
               updatedAt: Date.now(),
             }, true);
-            throw new Error(message);
+            setStatus(statusLabel, sessionId);
+            const error = new Error(message);
+            error.statusLabel = statusLabel;
+            throw error;
           }
           setStatus(job.statusLabel || "后端生成中", sessionId);
           await sleep(1500);
@@ -2867,7 +2872,7 @@
       function isTerminalTurnStatus(status) {
         const text = String(status || "");
         if (!text) return true;
-        return text.startsWith("完成") || text === "已停止" || text === "请求失败" || text === "JSON 已导入" || text.startsWith("已中断");
+        return text.startsWith("完成") || text === "已停止" || text === "请求失败" || text === "响应为空" || text === "JSON 已导入" || text.startsWith("已中断");
       }
 
       async function loadGallery() {
@@ -2907,13 +2912,14 @@
           pollBackendJob(turn.backendJobId, turn.sessionId, pollingStartFromTimestamp(turn.createdAt)).catch((error) => {
             const failedRun = getRunState(turn.sessionId);
             failedRun.backendJobId = "";
+            const statusLabel = error.statusLabel || "请求失败";
             updateActiveTurn(turn.sessionId, {
               backendJobId: "",
               backendResultHandled: true,
-              status: "请求失败",
+              status: statusLabel,
               updatedAt: Date.now(),
             }, true);
-            setStatus("请求失败", turn.sessionId);
+            setStatus(statusLabel, turn.sessionId);
             appendEvent(String(error.stack || error.message || error), turn.sessionId);
             toast(cleanErrorMessage(error.message || error), "error");
             setRunning(false, turn.sessionId);
@@ -2937,13 +2943,14 @@
         pollBackendJob(turn.backendJobId, turn.sessionId, pollingStartFromTimestamp(turn.createdAt)).catch((error) => {
           const failedRun = getRunState(turn.sessionId);
           failedRun.backendJobId = "";
+          const statusLabel = error.statusLabel || "请求失败";
           updateActiveTurn(turn.sessionId, {
             backendJobId: "",
             backendResultHandled: true,
-            status: "请求失败",
+            status: statusLabel,
             updatedAt: Date.now(),
           }, true);
-          setStatus("请求失败", turn.sessionId);
+          setStatus(statusLabel, turn.sessionId);
           appendEvent(String(error.stack || error.message || error), turn.sessionId);
           toast(cleanErrorMessage(error.message || error), "error");
           setRunning(false, turn.sessionId);
