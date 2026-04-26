@@ -6,7 +6,7 @@
   <title>Image Workbench</title>
   <link rel="icon" type="image/png" href="./assets/logo.png">
   <link rel="apple-touch-icon" href="./assets/logo.png">
-  <link rel="stylesheet" href="./styles.css?v=20260427-1">
+  <link rel="stylesheet" href="./styles.css?v=20260427-2">
 </head>
 <body>
   <svg aria-hidden="true" class="hidden">
@@ -248,7 +248,8 @@
                 <button id="modeEdit" type="button">修改</button>
               </div>
               <textarea id="prompt" rows="1" spellcheck="false" placeholder="描述你想生成的图片..."></textarea>
-              <button class="composer-icon-btn" id="promptLibraryBtn" type="button" title="提示词收藏"><svg><use href="#i-star"></use></svg></button>
+              <button class="composer-icon-btn" id="promptLibraryBtn" type="button" title="收藏当前提示词"><svg><use href="#i-star"></use></svg></button>
+              <button class="composer-icon-btn" id="promptManageBtn" type="button" title="管理提示词收藏"><svg><use href="#i-more"></use></svg></button>
               <button class="composer-icon-btn" id="paramsToggleBtn" type="button" title="参数设置"><svg><use href="#i-settings"></use></svg></button>
               <button id="abortBtn" type="button" disabled title="停止请求"><svg><use href="#i-stop"></use></svg></button>
               <button id="sendBtn" type="button" title="发送请求 (Ctrl+Enter)"><svg><use href="#i-send"></use></svg></button>
@@ -329,25 +330,15 @@
   </dialog>
 
   <dialog id="promptDialog" class="prompt-dialog">
-    <div class="modal-head"><h3 class="modal-title">提示词收藏</h3><button class="btn icon" id="closePromptDialogBtn" type="button" title="关闭"><svg><use href="#i-x"></use></svg></button></div>
+    <div class="modal-head">
+      <h3 class="modal-title">提示词收藏</h3>
+      <div class="modal-head-actions">
+        <span class="meta" id="promptFavoriteMeta"></span>
+        <button class="btn icon" id="closePromptDialogBtn" type="button" title="关闭"><svg><use href="#i-x"></use></svg></button>
+      </div>
+    </div>
     <div class="prompt-modal-body">
-      <section class="prompt-current">
-        <div class="field">
-          <label for="promptFavoriteDraft">当前提示词</label>
-          <textarea id="promptFavoriteDraft" spellcheck="false" placeholder="输入或粘贴要收藏的提示词"></textarea>
-        </div>
-        <div class="button-row">
-          <button class="btn primary" id="savePromptFavoriteBtn" type="button"><svg><use href="#i-star"></use></svg><span>收藏当前</span></button>
-          <button class="btn" id="usePromptDraftBtn" type="button"><svg><use href="#i-plus"></use></svg><span>放入输入框</span></button>
-        </div>
-      </section>
-      <section class="prompt-favorites-panel">
-        <div class="prompt-list-head">
-          <h4>已收藏</h4>
-          <span class="meta" id="promptFavoriteMeta"></span>
-        </div>
-        <div class="prompt-favorite-list" id="promptFavoriteList"></div>
-      </section>
+      <div class="prompt-favorite-list" id="promptFavoriteList"></div>
     </div>
   </dialog>
 
@@ -373,6 +364,6 @@
   </dialog>
 
   <div class="toast" id="toast"></div>
-  <script src="./app.js?v=20260427-1" defer></script>
+  <script src="./app.js?v=20260427-2" defer></script>
 </body>
 </html>

@@ -39,6 +39,7 @@
         systemPrompt: $("systemPrompt"),
         prompt: $("prompt"),
         promptLibraryBtn: $("promptLibraryBtn"),
+        promptManageBtn: $("promptManageBtn"),
         modeGenerate: $("modeGenerate"),
         modeEdit: $("modeEdit"),
         dropzone: $("dropzone"),
@@ -121,9 +122,6 @@
         referenceGallery: $("referenceGallery"),
         promptDialog: $("promptDialog"),
         closePromptDialogBtn: $("closePromptDialogBtn"),
-        promptFavoriteDraft: $("promptFavoriteDraft"),
-        savePromptFavoriteBtn: $("savePromptFavoriteBtn"),
-        usePromptDraftBtn: $("usePromptDraftBtn"),
         promptFavoriteList: $("promptFavoriteList"),
         promptFavoriteMeta: $("promptFavoriteMeta"),
       };
@@ -361,10 +359,9 @@
         els.clearRunBtn.addEventListener("click", () => clearRun());
         els.clearGalleryBtn.addEventListener("click", clearGallery);
         els.newSessionBtn.addEventListener("click", newSession);
-        els.promptLibraryBtn.addEventListener("click", openPromptDialog);
+        els.promptLibraryBtn.addEventListener("click", saveCurrentPromptFavorite);
+        els.promptManageBtn.addEventListener("click", openPromptDialog);
         els.closePromptDialogBtn.addEventListener("click", () => els.promptDialog.close());
-        els.savePromptFavoriteBtn.addEventListener("click", savePromptFavoriteFromDialog);
-        els.usePromptDraftBtn.addEventListener("click", () => usePromptText(els.promptFavoriteDraft.value, { closeDialog: true }));
         els.allGallerySelectBtn.addEventListener("click", toggleAllGallerySelection);
         els.allGallerySelectAllBtn.addEventListener("click", toggleSelectAllGallery);
         els.allGalleryDeleteSelectedBtn.addEventListener("click", deleteSelectedGalleryImages);
@@ -515,14 +512,12 @@
       }
 
       function openPromptDialog() {
-        els.promptFavoriteDraft.value = els.prompt.value.trim();
         renderPromptFavorites();
         els.promptDialog.showModal();
-        setTimeout(() => els.promptFavoriteDraft.focus(), 0);
       }
 
-      async function savePromptFavoriteFromDialog() {
-        const prompt = els.promptFavoriteDraft.value.trim();
+      async function saveCurrentPromptFavorite() {
+        const prompt = els.prompt.value.trim();
         if (!prompt) {
           toast("提示词为空", "error");
           return;
@@ -538,7 +533,7 @@
         state.promptFavorites.unshift(favorite);
         savePromptFavorites();
         renderPromptFavorites();
-        toast("提示词已收藏");
+        openPromptDialog();
         renamePromptFavoriteWithAi(favorite.id, { silent: true });
       }
 
@@ -556,12 +551,11 @@
             const item = document.createElement("article");
             item.className = "prompt-favorite-item";
 
-            const titleField = document.createElement("div");
-            titleField.className = "field";
-            titleField.innerHTML = '<label>命名</label>';
             const titleInput = document.createElement("input");
+            titleInput.className = "prompt-title-input";
             titleInput.value = favorite.title || "";
             titleInput.spellcheck = false;
+            titleInput.setAttribute("aria-label", "提示词命名");
             titleInput.addEventListener("change", () => {
               favorite.title = titleInput.value.trim().slice(0, 80) || compactPromptTitle(favorite.prompt);
               favorite.updatedAt = Date.now();
@@ -569,20 +563,17 @@
               titleInput.value = favorite.title;
               renderPromptFavorites();
             });
-            titleField.append(titleInput);
 
-            const promptField = document.createElement("div");
-            promptField.className = "field";
-            promptField.innerHTML = '<label>提示词</label>';
             const textarea = document.createElement("textarea");
+            textarea.className = "prompt-textarea";
             textarea.value = favorite.prompt || "";
             textarea.spellcheck = false;
+            textarea.setAttribute("aria-label", "提示词内容");
             textarea.addEventListener("input", () => {
               favorite.prompt = textarea.value;
               favorite.updatedAt = Date.now();
               savePromptFavorites();
             });
-            promptField.append(textarea);
 
             const actions = document.createElement("div");
             actions.className = "button-row";
@@ -593,7 +584,7 @@
               actionButton("#i-trash", "删除", "删除收藏", () => deletePromptFavorite(favorite.id), "danger-text"),
             );
 
-            item.append(titleField, promptField, actions);
+            item.append(titleInput, textarea, actions);
             els.promptFavoriteList.append(item);
           });
       }
