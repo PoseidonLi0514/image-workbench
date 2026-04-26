@@ -86,7 +86,7 @@ async function runJob(store, env, id, payload) {
   const upstreamTimeout = createTimeout(UPSTREAM_TIMEOUT_MS);
   try {
     await patchJob(store, id, { status: "running", statusLabel: "正在提交模型请求" });
-    const requestBody = { ...payload.request, stream: false };
+    const requestBody = { ...payload.request };
     await appendEvent(store, id, `POST ${endpoint}`);
     const response = await fetch(endpoint, {
       method: "POST",
@@ -108,7 +108,7 @@ async function runJob(store, env, id, payload) {
     const contentType = response.headers.get("content-type") || "";
     if (requestBody.stream && response.body && !contentType.includes("application/json")) {
       await patchJob(store, id, { statusLabel: "等待生成完成" });
-      const streamResult = await readSseResponse(response);
+      const streamResult = await readSseResponse(store, env, id, response);
       if (streamResult.failedResponse || streamResult.error) {
         await patchJob(store, id, {
           status: "failed",
@@ -119,10 +119,11 @@ async function runJob(store, env, id, payload) {
         });
         return;
       }
-      if (!streamResult.response) {
+      if (!streamResult.response && !streamResult.outputItems.length) {
         throw new Error("Stream ended without a completed response.");
       }
-      const stored = await storeResponseAssets(env, id, streamResult.response);
+      const finalResponse = mergeStreamOutputItems(streamResult.response, streamResult.outputItems);
+      const stored = await storeResponseAssets(env, id, finalResponse);
       if (!hasVisibleOutput(stored)) {
         await patchJob(store, id, {
           status: "failed",
@@ -208,7 +209,7 @@ function normalizeEndpoint(url) {
   return `${raw}/v1/responses`;
 }
 
-async function readSseResponse(response) {
+async function readSseResponse(store, env, id, response) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -216,6 +217,12 @@ async function readSseResponse(response) {
     eventCount: 0,
     outputText: "",
     response: null,
+    outputItems: [],
+    seenItemIds: new Set(),
+    statusFlags: {
+      firstEvent: false,
+      imageGenerating: false,
+    },
     failedResponse: null,
     error: "",
   };
@@ -226,14 +233,14 @@ async function readSseResponse(response) {
     const parts = buffer.split(/\r?\n\r?\n/);
     buffer = parts.pop() || "";
     for (const part of parts) {
-      handleSseBlock(state, part);
+      await handleSseBlock(store, env, id, state, part);
     }
   }
-  if (buffer.trim()) handleSseBlock(state, buffer);
+  if (buffer.trim()) await handleSseBlock(store, env, id, state, buffer);
   return state;
 }
 
-function handleSseBlock(state, block) {
+async function handleSseBlock(store, env, id, state, block) {
   let eventName = "";
   const dataLines = [];
   for (const line of block.split(/\r?\n/)) {
@@ -256,11 +263,31 @@ function handleSseBlock(state, block) {
 
   const type = data.type || eventName || "event";
   state.eventCount += 1;
+  if (!state.statusFlags.firstEvent) {
+    state.statusFlags.firstEvent = true;
+    await patchJob(store, id, { statusLabel: "模型已开始响应" });
+  }
 
   if (type === "response.output_text.delta" && data.delta) {
     state.outputText += data.delta;
   } else if (type === "response.output_text.done" && typeof data.text === "string") {
     state.outputText = data.text;
+  } else if (type === "response.output_item.done" && data.item) {
+    addStreamOutputItem(state, data.item);
+  } else if (type === "response.image_generation_call.completed" && data.item) {
+    addStreamOutputItem(state, data.item);
+  } else if (type === "response.image_generation_call.completed" && data.result) {
+    addStreamOutputItem(state, {
+      id: data.item_id || data.output_item_id || `image-${state.outputItems.length + 1}`,
+      type: "image_generation_call",
+      result: data.result,
+      output_format: data.output_format || "png",
+      size: data.size || "",
+      status: "completed",
+    });
+  } else if (type === "response.image_generation_call.partial_image" && !state.statusFlags.imageGenerating) {
+    state.statusFlags.imageGenerating = true;
+    await patchJob(store, id, { statusLabel: "正在生成图片" });
   } else if (type === "response.completed" && data.response) {
     state.response = data.response;
   } else if (type === "response.failed" || type === "response.incomplete") {
@@ -269,6 +296,29 @@ function handleSseBlock(state, block) {
   } else if (data.error) {
     state.error = extractStreamError(data, type);
   }
+}
+
+function addStreamOutputItem(state, item) {
+  if (!item || typeof item !== "object") return;
+  if (item.type !== "image_generation_call" && item.type !== "message") return;
+  const key = item.id || `${item.type}-${state.outputItems.length}`;
+  if (state.seenItemIds.has(key)) return;
+  state.seenItemIds.add(key);
+  state.outputItems.push(item);
+}
+
+function mergeStreamOutputItems(response, outputItems) {
+  const base = response && typeof response === "object" ? JSON.parse(JSON.stringify(response)) : { output: [] };
+  const existing = Array.isArray(base.output) ? base.output : [];
+  const seen = new Set(existing.map((item) => item && item.id).filter(Boolean));
+  for (const item of outputItems || []) {
+    if (!item || typeof item !== "object") continue;
+    if (item.id && seen.has(item.id)) continue;
+    existing.push(item);
+    if (item.id) seen.add(item.id);
+  }
+  base.output = existing;
+  return base;
 }
 
 function extractStreamError(data, fallback) {
