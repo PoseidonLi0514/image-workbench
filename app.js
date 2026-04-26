@@ -761,6 +761,7 @@
           thumbs ? `<div class="message-attachments">${thumbs}</div>` : "",
           '</div>',
         ].join("");
+        bindAttachmentThumbClicks(user, turn.attachments || [], turn.createdAt);
         appendMessageActions(user, () => turn.userPrompt || "", () => turn.attachments || []);
         els.outputArea.append(user);
 
@@ -812,9 +813,28 @@
       }
 
       function attachmentThumbsHtml(attachments) {
-        return (attachments || []).map((item) => (
-          `<div class="message-attachment"><img src="${escapeHtml(item.dataUrl || "")}" alt="${escapeHtml(item.name || "input image")}">${item.maskDataUrl ? '<span class="mask-badge">mask</span>' : ""}</div>`
+        return (attachments || []).map((item, index) => (
+          `<button class="message-attachment message-attachment-btn" type="button" data-attachment-index="${index}" title="点击放大"><img src="${escapeHtml(item.dataUrl || "")}" alt="${escapeHtml(item.name || "input image")}">${item.maskDataUrl ? '<span class="mask-badge">mask</span>' : ""}</button>`
         )).join("");
+      }
+
+      function bindAttachmentThumbClicks(container, attachments, createdAt) {
+        container.querySelectorAll("[data-attachment-index]").forEach((button) => {
+          button.addEventListener("click", () => {
+            const index = Number(button.dataset.attachmentIndex);
+            const item = attachments[index];
+            if (!item || !item.dataUrl) return;
+            openImageModal({
+              id: item.id || uid("input"),
+              name: `${index + 1}. ${item.name || "input-image"}`,
+              dataUrl: item.dataUrl,
+              mime: item.type || "image/png",
+              prompt: `Input Image ${index + 1}`,
+              createdAt: createdAt || Date.now(),
+              sourceKind: "input",
+            });
+          });
+        });
       }
 
       function appendMessageActions(messageEl, textGetter, attachmentsGetter) {
@@ -1717,6 +1737,7 @@
           thumbs ? `<div class="message-attachments">${thumbs}</div>` : "",
           '</div>',
         ].join("");
+        bindAttachmentThumbClicks(user, attachments || [], Date.now());
         appendMessageActions(user, () => prompt || "", () => attachments || []);
         els.outputArea.append(user);
 

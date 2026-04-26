@@ -423,6 +423,18 @@ details.sidebar-section[open] > summary.sidebar-section-title::before {
   background: rgba(255,255,255,.16);
   box-shadow: 0 1px 4px rgba(0,0,0,.16);
 }
+.message-attachment-btn {
+  appearance: none;
+  padding: 0;
+  cursor: zoom-in;
+}
+.message-attachment-btn:hover {
+  border-color: rgba(255,255,255,.9);
+}
+.message-attachment-btn:focus-visible {
+  outline: 2px solid rgba(255,255,255,.9);
+  outline-offset: 2px;
+}
 .message-attachment img {
   width: 100%;
   height: 100%;
