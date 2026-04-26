@@ -444,6 +444,7 @@
           });
           if (settings.apiUrl === "https://api.xdedm.top") els.apiUrl.value = "";
           if (settings.backendModeDefaultVersion !== 1) els.backendMode.checked = true;
+          if (!("streamMode" in settings)) els.streamMode.checked = true;
           els.rememberKey.checked = settings.rememberKey !== false;
           if (els.rememberKey.checked && settings.apiKey) {
             els.apiKey.value = settings.apiKey;
