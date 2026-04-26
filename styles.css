@@ -531,6 +531,37 @@ details.sidebar-section[open] > summary.sidebar-section-title::before {
   flex-wrap: nowrap;
 }
 
+.attachment-import {
+  display: grid;
+  gap: 6px;
+  padding: 8px 12px 0;
+}
+.attachment-import-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.attachment-import-head span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-import-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.attachment-import-track div {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--brand);
+  transition: width .12s linear;
+}
+
 .attachment {
   position: relative;
   width: 72px;

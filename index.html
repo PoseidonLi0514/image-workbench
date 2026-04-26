@@ -6,7 +6,7 @@
   <title>Image Workbench</title>
   <link rel="icon" type="image/png" href="./assets/logo.png">
   <link rel="apple-touch-icon" href="./assets/logo.png">
-  <link rel="stylesheet" href="./styles.css?v=20260426-3">
+  <link rel="stylesheet" href="./styles.css?v=20260426-4">
 </head>
 <body>
   <svg aria-hidden="true" class="hidden">
@@ -214,6 +214,13 @@
         <div class="composer-bar">
           <div class="composer-bar-inner">
             <div class="composer-attachments" id="attachments"></div>
+            <div class="attachment-import hidden" id="attachmentImport">
+              <div class="attachment-import-head">
+                <span id="attachmentImportLabel">正在导入参考图</span>
+                <span id="attachmentImportMeta">0%</span>
+              </div>
+              <div class="attachment-import-track"><div id="attachmentImportBar"></div></div>
+            </div>
             <div class="composer-input-row">
               <button class="composer-icon-btn" id="pickFileBtn" type="button" title="添加图片"><svg><use href="#i-plus"></use></svg></button>
               <input class="hidden" id="fileInput" type="file" accept="image/*" multiple>
@@ -322,6 +329,6 @@
   </dialog>
 
   <div class="toast" id="toast"></div>
-  <script src="./app.js?v=20260426-3" defer></script>
+  <script src="./app.js?v=20260426-4" defer></script>
 </body>
 </html>

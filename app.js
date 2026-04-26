@@ -37,6 +37,10 @@
         dropzone: $("dropzone"),
         fileInput: $("fileInput"),
         attachments: $("attachments"),
+        attachmentImport: $("attachmentImport"),
+        attachmentImportLabel: $("attachmentImportLabel"),
+        attachmentImportMeta: $("attachmentImportMeta"),
+        attachmentImportBar: $("attachmentImportBar"),
         pickFileBtn: $("pickFileBtn"),
         removeImagesBtn: $("removeImagesBtn"),
         sendBtn: $("sendBtn"),
@@ -118,6 +122,14 @@
         maskDrawing: false,
         runStates: {},
         turnSaveTimers: new Map(),
+        attachmentImport: {
+          active: false,
+          totalFiles: 0,
+          doneFiles: 0,
+          totalBytes: 0,
+          loadedBytes: 0,
+          currentName: "",
+        },
       };
 
       function getRunState(sessionId) {
@@ -876,22 +888,71 @@
 
       async function addFiles(files) {
         const imageFiles = Array.from(files || []).filter((file) => file && file.type.startsWith("image/"));
-        for (const file of imageFiles) {
-          const dataUrl = await fileToDataUrl(file);
-          state.attachments.push({
-            id: uid("input"),
-            name: file.name || "pasted-image",
-            type: file.type || "image/png",
-            size: file.size || 0,
-            dataUrl,
-          });
+        if (!imageFiles.length) return;
+        if (state.attachmentImport.active) {
+          toast("参考图正在导入，请稍等", "error");
+          return;
         }
-        if (imageFiles.length) {
-          state.mode = "edit";
-          updateMode();
-          renderAttachments();
-          updateRequestPreview();
+
+        const importState = state.attachmentImport;
+        importState.active = true;
+        importState.totalFiles = imageFiles.length;
+        importState.doneFiles = 0;
+        importState.totalBytes = imageFiles.reduce((sum, file) => sum + (file.size || 0), 0);
+        importState.loadedBytes = 0;
+        importState.currentName = "";
+        updateAttachmentImportUI();
+        syncActiveRunControls();
+
+        let completedBytes = 0;
+        try {
+          for (const file of imageFiles) {
+            importState.currentName = file.name || "pasted-image";
+            updateAttachmentImportUI();
+            const dataUrl = await fileToDataUrl(file, (loaded, total) => {
+              const knownTotal = total || file.size || 0;
+              importState.loadedBytes = completedBytes + Math.min(loaded || 0, knownTotal || loaded || 0);
+              updateAttachmentImportUI();
+            });
+            completedBytes += file.size || 0;
+            importState.doneFiles += 1;
+            importState.loadedBytes = completedBytes;
+            state.attachments.push({
+              id: uid("input"),
+              name: file.name || "pasted-image",
+              type: file.type || "image/png",
+              size: file.size || 0,
+              dataUrl,
+            });
+            updateAttachmentImportUI();
+          }
+        } catch (error) {
+          toast(`参考图导入失败：${error.message || error}`, "error");
+        } finally {
+          importState.active = false;
+          importState.currentName = "";
+          importState.loadedBytes = importState.totalBytes;
+          updateAttachmentImportUI();
+          syncActiveRunControls();
         }
+        state.mode = "edit";
+        updateMode();
+        renderAttachments();
+        updateRequestPreview();
+      }
+
+      function updateAttachmentImportUI() {
+        const item = state.attachmentImport;
+        if (!els.attachmentImport) return;
+        const percent = item.totalBytes
+          ? Math.min(100, Math.round((item.loadedBytes / item.totalBytes) * 100))
+          : (item.totalFiles ? Math.round((item.doneFiles / item.totalFiles) * 100) : 0);
+        els.attachmentImport.classList.toggle("hidden", !item.active);
+        els.attachmentImportLabel.textContent = item.currentName
+          ? `正在导入 ${item.currentName}`
+          : "正在导入参考图";
+        els.attachmentImportMeta.textContent = `${item.doneFiles}/${item.totalFiles} · ${percent}%`;
+        els.attachmentImportBar.style.width = `${percent}%`;
       }
 
       function renderAttachments() {
@@ -1271,6 +1332,10 @@
         }
         const sessionId = state.activeSessionId;
         const run = getRunState(sessionId);
+        if (state.attachmentImport.active) {
+          toast("参考图还在导入，完成后再发送", "error");
+          return;
+        }
         if (run.isRunning) {
           toast("该 Session 正在生成中", "error");
           return;
@@ -2424,7 +2489,7 @@
 
       function syncActiveRunControls() {
         const run = activeRun();
-        els.sendBtn.disabled = run.isRunning;
+        els.sendBtn.disabled = run.isRunning || state.attachmentImport.active;
         els.abortBtn.disabled = !run.isRunning;
         els.meter.classList.toggle("on", run.isRunning);
         els.statusText.textContent = run.lastStatus || "就绪";
@@ -2435,7 +2500,7 @@
         run.isRunning = running;
         const isActive = !sessionId || sessionId === state.activeSessionId;
         if (isActive) {
-          els.sendBtn.disabled = running;
+          els.sendBtn.disabled = running || state.attachmentImport.active;
           els.abortBtn.disabled = !running;
           els.meter.classList.toggle("on", running);
         }
@@ -2571,11 +2636,14 @@
         return `image/${clean || "png"}`;
       }
 
-      function fileToDataUrl(file) {
+      function fileToDataUrl(file, onProgress) {
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(String(reader.result));
           reader.onerror = reject;
+          reader.onprogress = (event) => {
+            if (typeof onProgress === "function") onProgress(event.loaded, event.total);
+          };
           reader.readAsDataURL(file);
         });
       }
