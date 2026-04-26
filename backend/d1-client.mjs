@@ -31,12 +31,12 @@ export class D1Client {
     });
     const data = await response.json().catch(() => null);
     if (!response.ok || !data || data.success === false) {
-      const message = cloudflareErrorMessage(data) || `D1 query failed: HTTP ${response.status}`;
+      const message = formatD1Error(cloudflareErrorMessage(data) || `HTTP ${response.status}`);
       throw new Error(message);
     }
     const result = Array.isArray(data.result) ? data.result[0] : data.result;
     if (result && result.success === false) {
-      throw new Error(result.error || "D1 query failed");
+      throw new Error(formatD1Error(result.error || "query failed"));
     }
     return result || { results: [], meta: {} };
   }
@@ -49,4 +49,12 @@ function cloudflareErrorMessage(data) {
   }
   if (data.error) return String(data.error);
   return "";
+}
+
+function formatD1Error(message) {
+  const text = String(message || "query failed");
+  if (/authentication error|invalid api token/i.test(text)) {
+    return `Cloudflare D1 authentication failed: ${text}. Check CF_API_TOKEN on the Node backend.`;
+  }
+  return `D1 query failed: ${text}`;
 }

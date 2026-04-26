@@ -50,7 +50,14 @@ async function handleRequest(request, response) {
 
   const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
   if (url.pathname === "/health") {
-    writeJson(response, { ok: true, d1: d1.configured, publicBaseUrl: PUBLIC_BASE_URL });
+    const d1Health = await checkD1Health();
+    writeJson(response, {
+      ok: d1Health.ok,
+      d1: d1Health.ok,
+      d1Configured: d1.configured,
+      d1Error: d1Health.error,
+      publicBaseUrl: PUBLIC_BASE_URL,
+    }, d1Health.ok ? 200 : 503);
     return;
   }
   if (url.pathname === "/api/jobs" && request.method === "POST") {
@@ -216,6 +223,16 @@ async function handleAsset(response, key) {
     "Cache-Control": "private, max-age=31536000, immutable",
   });
   fssync.createReadStream(filePath).pipe(response);
+}
+
+async function checkD1Health() {
+  if (!d1.configured) return { ok: false, error: "Missing D1 config." };
+  try {
+    await d1.query("SELECT 1 AS ok");
+    return { ok: true, error: "" };
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
 }
 
 async function runJob(id, payload, options = {}) {
