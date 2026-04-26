@@ -1303,13 +1303,26 @@
         } catch (error) {
           if (error.name === "AbortError") {
             run.backendJobId = "";
+            updateActiveTurn(sessionId, {
+              backendJobId: "",
+              backendResultHandled: true,
+              updatedAt: Date.now(),
+            }, true);
             setStatus("已停止", sessionId);
             appendEvent("AbortError", sessionId);
           } else {
             run.backendJobId = "";
+            if (useBackend) {
+              updateActiveTurn(sessionId, {
+                backendJobId: "",
+                backendResultHandled: true,
+                status: "请求失败",
+                updatedAt: Date.now(),
+              }, true);
+            }
             setStatus("请求失败", sessionId);
             appendEvent(String(error.stack || error.message || error), sessionId);
-            toast(String(error.message || error), "error");
+            toast(cleanErrorMessage(error.message || error), "error");
           }
         } finally {
           setRunning(false, sessionId);
@@ -1372,7 +1385,14 @@
             return;
           }
           if (job.status === "failed" || job.status === "canceled") {
-            const message = job.error || (job.status === "canceled" ? "任务已取消" : "后端任务失败");
+            const message = cleanErrorMessage(job.error || (job.status === "canceled" ? "任务已取消" : "后端任务失败"));
+            run.backendJobId = "";
+            updateActiveTurn(sessionId, {
+              backendJobId: "",
+              backendResultHandled: true,
+              status: job.status === "canceled" ? "已停止" : "请求失败",
+              updatedAt: Date.now(),
+            }, true);
             throw new Error(message);
           }
           setStatus(job.statusLabel || "后端生成中", sessionId);
@@ -1382,6 +1402,13 @@
 
       function sleep(ms) {
         return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      function cleanErrorMessage(error) {
+        return String(error || "")
+          .replace(/^Error:\s*/, "")
+          .split(/\r?\n/)[0]
+          .trim() || "请求失败";
       }
 
       async function readSse(response, sessionId) {
@@ -2719,9 +2746,15 @@
         pollBackendJob(turn.backendJobId, turn.sessionId).catch((error) => {
           const run = getRunState(turn.sessionId);
           run.backendJobId = "";
+          updateActiveTurn(turn.sessionId, {
+            backendJobId: "",
+            backendResultHandled: true,
+            status: "请求失败",
+            updatedAt: Date.now(),
+          }, true);
           setStatus("请求失败", turn.sessionId);
           appendEvent(String(error.stack || error.message || error), turn.sessionId);
-          toast(String(error.message || error), "error");
+          toast(cleanErrorMessage(error.message || error), "error");
           setRunning(false, turn.sessionId);
         });
       }
