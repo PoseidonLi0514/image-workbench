@@ -278,7 +278,7 @@ async function handleNameRequest(request, response) {
         ],
         stream: false,
         temperature: 0.2,
-        max_tokens: 80,
+        max_tokens: 300,
       }),
       signal: controller.signal,
     });
@@ -319,9 +319,8 @@ function extractChatCompletionText(data) {
 function buildNamingPrompt(kind, text) {
   const target = String(kind || "") === "session" ? "Session" : "提示词";
   return [
-    `给下面的${target}起一个简短中文名称。`,
-    "要求：只输出名称，不要解释，不要加引号；最多 16 个汉字或 32 个英文字符；保留核心主题。",
-    "",
+    `只输出一个简短中文标题，不要解释，不要引号。对象：${target}`,
+    "内容：",
     text.slice(0, 4000),
   ].join("\n");
 }
