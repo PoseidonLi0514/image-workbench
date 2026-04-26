@@ -1670,10 +1670,20 @@
       }
 
       function cleanErrorMessage(error) {
-        return String(error || "")
+        const text = String(error || "")
           .replace(/^Error:\s*/, "")
           .split(/\r?\n/)[0]
-          .trim() || "请求失败";
+          .trim();
+        if (!text) return "请求失败";
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed && typeof parsed === "object") {
+            return parsed.message || parsed.error || text;
+          }
+        } catch {
+          // Keep the original text when it is not a JSON error payload.
+        }
+        return text;
       }
 
       function backendApiUrl(path) {
@@ -3135,7 +3145,19 @@
       function isTerminalTurnStatus(status) {
         const text = String(status || "");
         if (!text) return true;
-        return text.startsWith("完成") || text === "已停止" || text === "请求失败" || text === "响应为空" || text === "JSON 已导入" || text.startsWith("已中断");
+        return text.startsWith("完成")
+          || text === "已停止"
+          || text === "请求失败"
+          || text === "响应为空"
+          || text === "安全审核拦截"
+          || text === "上游鉴权失败"
+          || text === "上游限流或额度不足"
+          || text === "上游请求超时"
+          || text === "请求参数错误"
+          || text === "上游服务错误"
+          || text === "模型响应未完成"
+          || text === "JSON 已导入"
+          || text.startsWith("已中断");
       }
 
       async function loadGallery() {

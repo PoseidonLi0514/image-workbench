@@ -283,7 +283,11 @@ async function runJob(id, payload, options = {}) {
     await appendEvent(id, `HTTP ${upstream.status} ${upstream.statusText}`);
     if (!upstream.ok) {
       const text = await upstream.text();
-      throw new Error(text || `HTTP ${upstream.status}`);
+      const error = new Error(text || `HTTP ${upstream.status}`);
+      error.upstreamStatus = upstream.status;
+      error.upstreamStatusText = upstream.statusText;
+      error.upstreamBody = text;
+      throw error;
     }
 
     const contentType = upstream.headers.get("content-type") || "";
@@ -291,12 +295,13 @@ async function runJob(id, payload, options = {}) {
       await updateJob(id, publish, { statusLabel: "等待生成完成" });
       const streamResult = await readSseResponse(id, upstream, publish);
       if (streamResult.failedResponse || streamResult.error) {
+        const failure = classifyFailure(streamResult.error, streamResult.failedResponse);
         await updateJob(id, publish, {
           status: "failed",
-          statusLabel: "请求失败",
+          statusLabel: failure.statusLabel,
           response: streamResult.failedResponse,
           outputText: streamResult.outputText,
-          error: streamResult.error || "Stream failed",
+          error: failure.message,
         });
         return;
       }
@@ -327,6 +332,17 @@ async function runJob(id, payload, options = {}) {
       await appendEvent(id, "waiting for full response body");
       const data = await upstream.json();
       const stored = await storeResponseAssets(id, data);
+      const responseFailure = classifyResponseFailure(stored);
+      if (responseFailure) {
+        await updateJob(id, publish, {
+          status: "failed",
+          statusLabel: responseFailure.statusLabel,
+          response: stored,
+          outputText: extractResponseText(stored),
+          error: responseFailure.message,
+        });
+        return;
+      }
       if (!hasExpectedOutput(stored)) {
         await updateJob(id, publish, {
           status: "failed",
@@ -345,11 +361,12 @@ async function runJob(id, payload, options = {}) {
       });
     }
   } catch (error) {
-    await appendEvent(id, `error ${errorMessage(error)}`).catch(() => {});
+    const failure = classifyFailure(error);
+    await appendEvent(id, `error ${failure.statusLabel}: ${failure.message}`).catch(() => {});
     await updateJob(id, publish, {
       status: "failed",
-      statusLabel: "请求失败",
-      error: errorMessage(error),
+      statusLabel: failure.statusLabel,
+      error: failure.message,
     });
   } finally {
     clearTimeout(timeout);
@@ -481,6 +498,93 @@ function extractStreamError(data, fallback) {
   if (data.error) return JSON.stringify(data.error);
   if (data.response && data.response.error) return JSON.stringify(data.response.error);
   return fallback;
+}
+
+function classifyResponseFailure(response) {
+  if (!response || typeof response !== "object") return null;
+  if (response.error) return classifyFailure(response.error, response);
+  const status = String(response.status || "").toLowerCase();
+  if (status === "failed" || status === "incomplete") {
+    return classifyFailure({ code: status, message: `response.status=${status}` }, response);
+  }
+  return null;
+}
+
+function classifyFailure(error, response = null) {
+  const normalized = normalizeFailure(error, response);
+  const code = String(normalized.code || "").toLowerCase();
+  const status = Number(normalized.upstreamStatus || 0);
+  const message = normalized.message || errorMessage(error);
+  const haystack = [code, normalized.type, normalized.status, message, normalized.raw]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  let statusLabel = "请求失败";
+  if (code === "moderation_blocked" || /moderation_blocked|safety_violations|safety system|content_policy|policy violation/.test(haystack)) {
+    statusLabel = "安全审核拦截";
+  } else if (status === 401 || status === 403 || /unauthorized|authentication|invalid api key|incorrect api key|permission denied/.test(haystack)) {
+    statusLabel = "上游鉴权失败";
+  } else if (status === 429 || /rate.?limit|quota|insufficient_quota|too many requests/.test(haystack)) {
+    statusLabel = "上游限流或额度不足";
+  } else if (error && error.name === "AbortError" || /timeout|timed out|超过 .*秒|aborted/.test(haystack)) {
+    statusLabel = "上游请求超时";
+  } else if (status === 400 || /invalid_request|bad request|schema|parameter|unsupported|malformed/.test(haystack)) {
+    statusLabel = "请求参数错误";
+  } else if (status >= 500 || /server error|bad gateway|service unavailable|gateway timeout/.test(haystack)) {
+    statusLabel = "上游服务错误";
+  } else if (/response.status=incomplete|incomplete/.test(haystack)) {
+    statusLabel = "模型响应未完成";
+  } else if (/没有返回可显示|response ended without|empty/.test(haystack)) {
+    statusLabel = "响应为空";
+  }
+
+  return {
+    statusLabel,
+    message: formatFailureMessage(statusLabel, normalized),
+  };
+}
+
+function normalizeFailure(error, response) {
+  const source = response && response.error ? response.error : error;
+  const normalized = normalizeFailureSource(source);
+  if (error && typeof error === "object") {
+    if (error.upstreamStatus) normalized.upstreamStatus = error.upstreamStatus;
+    if (error.upstreamStatusText) normalized.upstreamStatusText = error.upstreamStatusText;
+    if (error.upstreamBody && !normalized.raw) normalized.raw = String(error.upstreamBody);
+  }
+  if (response && typeof response === "object" && response.status && !normalized.status) {
+    normalized.status = String(response.status);
+  }
+  return normalized;
+}
+
+function normalizeFailureSource(source) {
+  if (!source) return { message: "", raw: "" };
+  if (typeof source === "object") {
+    return {
+      code: source.code || source.type || "",
+      type: source.type || "",
+      status: source.status || "",
+      message: source.message || source.error || JSON.stringify(source),
+      raw: JSON.stringify(source),
+    };
+  }
+  const raw = String(source);
+  const parsed = parseJson(raw, null);
+  if (parsed && typeof parsed === "object") return normalizeFailureSource(parsed);
+  return { message: raw, raw };
+}
+
+function formatFailureMessage(statusLabel, failure) {
+  const code = failure.code ? `（${failure.code}）` : "";
+  let detail = failure.message || failure.raw || statusLabel;
+  if (failure.upstreamStatus) {
+    detail = `上游 HTTP ${failure.upstreamStatus}${failure.upstreamStatusText ? ` ${failure.upstreamStatusText}` : ""}: ${detail}`;
+  }
+  detail = String(detail).replace(/\s+/g, " ").trim();
+  if (detail.length > 2000) detail = `${detail.slice(0, 2000)}...`;
+  return `${statusLabel}${code}：${detail}`;
 }
 
 function extractResponseText(response) {
