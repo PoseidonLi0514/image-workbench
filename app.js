@@ -79,6 +79,7 @@
         modalCopyBtn: $("modalCopyBtn"),
         modalDownloadBtn: $("modalDownloadBtn"),
         modalUseBtn: $("modalUseBtn"),
+        modalMaskBtn: $("modalMaskBtn"),
         closeModalBtn: $("closeModalBtn"),
         loadJsonBtn: $("loadJsonBtn"),
         jsonDialog: $("jsonDialog"),
@@ -393,6 +394,12 @@
             await useImageAsInput(state.modalImage);
             els.imageDialog.close();
           }
+        });
+        els.modalMaskBtn.addEventListener("click", async () => {
+          const attachment = modalMaskAttachment();
+          if (!attachment) return;
+          els.imageDialog.close();
+          await openMaskEditor(attachment.id);
         });
 
         els.loadJsonBtn.addEventListener("click", () => {
@@ -1306,7 +1313,6 @@
             label,
             iconButton("#i-arrow-up", "上移", () => moveAttachment(item.id, -1)),
             iconButton("#i-arrow-down", "下移", () => moveAttachment(item.id, 1)),
-            iconButton("#i-image", "绘制 mask", () => openMaskEditor(item.id)),
           );
           wrap.append(img, saveBtn, btn, tools);
           els.attachments.append(wrap);
@@ -2666,8 +2672,16 @@
         });
         els.modalPrompt.textContent = image.revisedPrompt || image.prompt || "";
         els.modalUseBtn.disabled = image.sourceKind === "input";
+        const canMask = Boolean(modalMaskAttachment(image));
+        els.modalMaskBtn.classList.toggle("hidden", !canMask);
+        els.modalMaskBtn.disabled = !canMask;
         els.imageDialog.showModal();
         requestAnimationFrame(resetModalZoom);
+      }
+
+      function modalMaskAttachment(image = state.modalImage) {
+        if (!image || image.sourceKind !== "input") return null;
+        return state.attachments.find((item) => item.id === image.id && item.dataUrl) || null;
       }
 
       function bindModalZoomEvents() {
