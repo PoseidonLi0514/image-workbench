@@ -1295,7 +1295,48 @@ svg { width: 17px; height: 17px; stroke-width: 2; flex: 0 0 auto; }
   :root { --drawer-w: 100vw; }
   .topbar { padding: 0 12px; }
   .chat-scroll { padding: 12px; }
-  .composer-bar { padding: 8px 12px 12px; }
+  .composer-bar { padding: 8px 8px max(10px, env(safe-area-inset-bottom)); }
+  .composer-bar-inner { border-radius: var(--radius); }
+  .composer-input-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 8px;
+  }
+  .composer-input-row #prompt {
+    order: 2;
+    flex: 1 1 calc(100% - 84px);
+    min-width: 0;
+    min-height: 42px;
+    max-height: 128px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    font-size: 16px;
+  }
+  .composer-input-row #pickFileBtn,
+  .composer-input-row #modeSegmented,
+  .composer-input-row #promptLibraryBtn,
+  .composer-input-row #promptManageBtn,
+  .composer-input-row #paramsToggleBtn {
+    order: 1;
+  }
+  .composer-input-row #modeSegmented {
+    flex: 1 1 auto;
+    min-width: 116px;
+  }
+  .composer-input-row #modeSegmented button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 10px;
+  }
+  .composer-input-row #abortBtn,
+  .composer-input-row #sendBtn {
+    order: 2;
+    flex: 0 0 36px;
+  }
   .modal-body { grid-template-columns: 1fr; }
   .prompt-modal-body { padding: 14px; }
   .prompt-favorite-list { grid-template-columns: 1fr; }
