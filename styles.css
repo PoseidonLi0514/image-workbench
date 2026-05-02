@@ -736,7 +736,8 @@ details.sidebar-section[open] > summary.sidebar-section-title::before {
   list-style: none;
 }
 .system-prompt-details summary::-webkit-details-marker { display: none; }
-.system-prompt-details input {
+.system-prompt-details input,
+.system-prompt-details textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -747,7 +748,14 @@ details.sidebar-section[open] > summary.sidebar-section-title::before {
   outline: none;
   margin-top: 4px;
 }
-.system-prompt-details input:focus {
+.system-prompt-details textarea {
+  min-height: 120px;
+  max-height: 220px;
+  resize: vertical;
+  line-height: 1.45;
+}
+.system-prompt-details input:focus,
+.system-prompt-details textarea:focus {
   border-color: var(--brand);
   box-shadow: 0 0 0 3px rgba(10,132,255,.12);
 }
