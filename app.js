@@ -142,6 +142,7 @@
         selectedGalleryIds: new Set(),
         turns: [],
         sessions: [],
+        sessionDrafts: new Map(),
         activeSessionId: "",
         saveDirHandle: null,
         db: null,
@@ -198,6 +199,74 @@
 
       function activeRun() {
         return getRunState(state.activeSessionId);
+      }
+
+      function emptyComposerDraft() {
+        return { prompt: "", attachments: [], mode: "generate" };
+      }
+
+      function saveCurrentDraft(sessionId = state.activeSessionId) {
+        if (!sessionId) return;
+        const draft = {
+          prompt: els.prompt ? els.prompt.value : "",
+          attachments: snapshotAttachments(state.attachments),
+          mode: state.mode || "generate",
+        };
+        state.sessionDrafts.set(sessionId, draft);
+        const session = state.sessions.find((entry) => entry.id === sessionId);
+        if (session) session.draft = draft;
+      }
+
+      function restoreComposerDraft(sessionId = state.activeSessionId) {
+        const draft = state.sessionDrafts.get(sessionId) || emptyComposerDraft();
+        state.attachments = snapshotAttachments(draft.attachments || []);
+        state.mode = draft.mode || (state.attachments.length ? "edit" : "generate");
+        setPromptText(draft.prompt || "", { saveDraft: false });
+        updateMode({ focusDropzone: false });
+        renderAttachments();
+        updateRequestPreview();
+      }
+
+      function cloneAttachmentForComposer(item, index = 0) {
+        if (!item || !item.dataUrl) return null;
+        return {
+          id: uid("input"),
+          name: item.name || `image-${index + 1}.png`,
+          type: item.type || item.mime || "image/png",
+          size: item.size || item.byteSize || dataUrlByteLength(item.dataUrl),
+          dataUrl: item.dataUrl,
+          maskDataUrl: item.maskDataUrl || "",
+          savedReferenceId: item.savedReferenceId || (isReferenceImage(item) ? item.id : ""),
+        };
+      }
+
+      function appendComposerAttachments(attachments, options = {}) {
+        const nextAttachments = (attachments || [])
+          .map((item, index) => cloneAttachmentForComposer(item, index))
+          .filter(Boolean);
+        if (!nextAttachments.length) return 0;
+        state.attachments.push(...nextAttachments);
+        const masked = nextAttachments.find((item) => item.maskDataUrl);
+        if (masked) enforceSingleMask(masked.id);
+        state.mode = "edit";
+        updateMode({ focusDropzone: false });
+        renderAttachments();
+        updateRequestPreview();
+        saveCurrentDraft();
+        if (!options.silent) toast(`已追加 ${nextAttachments.length} 张参考图`);
+        return nextAttachments.length;
+      }
+
+      function enforceSingleMask(preferredId) {
+        let keepId = preferredId || "";
+        if (!keepId) {
+          const first = state.attachments.find((item) => item.maskDataUrl);
+          keepId = first ? first.id : "";
+        }
+        if (!keepId) return;
+        state.attachments.forEach((item) => {
+          if (item.id !== keepId) delete item.maskDataUrl;
+        });
       }
 
       function hasRunningRequests() {
@@ -313,11 +382,13 @@
           state.mode = "generate";
           updateMode();
           updateRequestPreview();
+          saveCurrentDraft();
         });
         els.modeEdit.addEventListener("click", () => {
           state.mode = "edit";
           updateMode();
           updateRequestPreview();
+          saveCurrentDraft();
         });
 
         els.dropzone.addEventListener("click", () => els.fileInput.click());
@@ -336,6 +407,7 @@
           state.attachments = [];
           renderAttachments();
           updateRequestPreview();
+          saveCurrentDraft();
         });
 
         ["dragenter", "dragover"].forEach((name) => {
@@ -442,6 +514,7 @@
         els.prompt.addEventListener("input", () => {
           els.prompt.style.height = "auto";
           els.prompt.style.height = Math.min(els.prompt.scrollHeight, 160) + "px";
+          saveCurrentDraft();
         });
 
         // Expand drag-drop to chat area
@@ -750,8 +823,15 @@
         if (!state.sessions.some((session) => session.id === state.activeSessionId)) {
           state.activeSessionId = state.sessions[0].id;
         }
+        state.sessionDrafts = new Map();
+        state.sessions.forEach((session) => {
+          const draft = normalizeComposerDraft(session.draft);
+          session.draft = draft;
+          state.sessionDrafts.set(session.id, draft);
+        });
         saveSessions();
         renderSessions();
+        restoreComposerDraft();
       }
 
       function createSession(title) {
@@ -762,29 +842,51 @@
           titleMode: "default",
           createdAt: now,
           updatedAt: now,
+          draft: emptyComposerDraft(),
         };
         session.folderName = buildSessionFolderName(session);
         return session;
       }
 
       function saveSessions() {
+        state.sessions.forEach((session) => {
+          session.draft = normalizeComposerDraft(state.sessionDrafts.get(session.id) || session.draft);
+        });
         state.sessions.forEach(ensureSessionFolderName);
         state.sessions.sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0));
-        localStorage.setItem("imageWorkbench.sessions", JSON.stringify(state.sessions));
+        localStorage.setItem("imageWorkbench.sessions", JSON.stringify(state.sessions.map(sessionForStorage)));
         localStorage.setItem("imageWorkbench.activeSession", state.activeSessionId);
       }
 
+      function sessionForStorage(session) {
+        const { draft, ...stored } = session || {};
+        return stored;
+      }
+
+      function normalizeComposerDraft(draft) {
+        const normalized = draft && typeof draft === "object" ? draft : {};
+        const attachments = snapshotAttachments(normalized.attachments || []);
+        const mode = normalized.mode === "edit" || normalized.mode === "generate"
+          ? normalized.mode
+          : (attachments.length ? "edit" : "generate");
+        return {
+          prompt: String(normalized.prompt || ""),
+          attachments,
+          mode,
+        };
+      }
+
       function newSession() {
+        saveCurrentDraft();
         const next = createSession(`Session ${state.sessions.length + 1}`);
         state.sessions.unshift(next);
         state.activeSessionId = next.id;
+        state.sessionDrafts.set(next.id, next.draft);
         saveSessions();
-        state.attachments = [];
-        renderAttachments();
+        restoreComposerDraft(next.id);
         clearRun(next.id);
         renderSessions();
         renderGallery();
-        updateRequestPreview();
         updateSaveDirStatus();
         syncActiveRunControls();
         els.prompt.focus();
@@ -792,8 +894,10 @@
 
       function switchSession(id) {
         if (!state.sessions.some((session) => session.id === id)) return;
+        saveCurrentDraft();
         state.activeSessionId = id;
         saveSessions();
+        restoreComposerDraft(id);
         renderSessions();
         renderGallery();
         renderSessionHistory();
@@ -945,6 +1049,7 @@
         if (!state.sessions.length) state.sessions = [createSession("Session 1")];
         state.sessions.sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0));
         if (state.activeSessionId === id) state.activeSessionId = state.sessions[0].id;
+        state.sessionDrafts.delete(id);
         state.turns = state.turns.filter((turn) => turn.sessionId !== id);
         const deletedRun = state.runStates[id];
         if (deletedRun) {
@@ -961,6 +1066,7 @@
         }
 
         saveSessions();
+        restoreComposerDraft(state.activeSessionId);
         renderSessions();
         renderGallery();
         renderSessionHistory();
@@ -1130,23 +1236,19 @@
       }
 
       function reuseMessageInput(text, attachments) {
-        const nextAttachments = snapshotAttachments(attachments || []);
+        const added = appendComposerAttachments(attachments || [], { silent: true });
         setPromptText(text || "");
-        state.attachments = nextAttachments;
-        state.mode = nextAttachments.length ? "edit" : "generate";
-        updateMode();
-        renderAttachments();
-        updateRequestPreview();
         els.prompt.focus({ preventScroll: true });
         els.prompt.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        toast("已复用到输入框");
+        toast(added ? `已复用文字并追加 ${added} 张参考图` : "已复用文字到输入框");
       }
 
-      function setPromptText(text) {
+      function setPromptText(text, options = {}) {
         els.prompt.value = String(text || "");
         els.prompt.style.height = "auto";
         els.prompt.style.height = Math.min(els.prompt.scrollHeight, 160) + "px";
         updateRequestPreview();
+        if (options.saveDraft !== false) saveCurrentDraft();
       }
 
       function usePromptText(text, options = {}) {
@@ -1163,11 +1265,12 @@
 
       function imageAttachments(images) {
         return (images || []).filter((image) => image && image.dataUrl).map((image, index) => ({
-          id: uid("input"),
+          id: image.id || uid("input"),
           name: image.name || `image-${index + 1}.png`,
-          type: image.mime || "image/png",
-          size: dataUrlByteLength(image.dataUrl),
+          type: image.mime || image.type || "image/png",
+          size: image.byteSize || image.size || dataUrlByteLength(image.dataUrl),
           dataUrl: image.dataUrl,
+          savedReferenceId: isReferenceImage(image) ? image.id : "",
         }));
       }
 
@@ -1186,9 +1289,10 @@
         }
       }
 
-      function updateMode() {
+      function updateMode(options = {}) {
         els.modeGenerate.classList.toggle("active", state.mode === "generate");
         els.modeEdit.classList.toggle("active", state.mode === "edit");
+        if (options.focusDropzone === false) return;
         if (state.mode === "edit" && !state.attachments.length) {
           els.dropzone.focus({ preventScroll: true });
         }
@@ -1247,6 +1351,7 @@
         updateMode();
         renderAttachments();
         updateRequestPreview();
+        saveCurrentDraft();
       }
 
       function updateAttachmentImportUI() {
@@ -1311,6 +1416,7 @@
             state.attachments = state.attachments.filter((x) => x.id !== item.id);
             renderAttachments();
             updateRequestPreview();
+            saveCurrentDraft();
           });
           const tools = document.createElement("div");
           tools.className = "attachment-tools";
@@ -1335,6 +1441,7 @@
         state.attachments.splice(next, 0, item);
         renderAttachments();
         updateRequestPreview();
+        saveCurrentDraft();
       }
 
       function bindMaskEvents() {
@@ -1453,6 +1560,7 @@
         }
         renderAttachments();
         updateRequestPreview();
+        saveCurrentDraft();
         els.maskDialog.close();
         toast("Mask 已保存");
       }
@@ -1634,6 +1742,7 @@
       }
 
       async function sendRequest() {
+        saveCurrentDraft();
         const key = els.apiKey.value.trim();
         const useBackend = els.backendMode.checked;
         if (!key && !useBackend) {
@@ -1663,10 +1772,10 @@
         run.controller = new AbortController();
         run.abortReason = "";
         startFrontendTurn(promptText, state.attachments, sessionId);
-        els.prompt.value = "";
-        els.prompt.style.height = "";
+        setPromptText("", { saveDraft: false });
         state.attachments = [];
         renderAttachments();
+        saveCurrentDraft(sessionId);
         setRunning(true, sessionId);
         touchActiveSession(promptText);
         setStatus("正在提交请求", sessionId);
@@ -2496,7 +2605,7 @@
         const actions = document.createElement("div");
         actions.className = "image-actions";
         actions.append(
-          actionButton("#i-plus", "输入", "作为输入", () => useImageAsInput(image)),
+          actionButton("#i-plus", "追加图片", "追加到参考图", () => useImageAsInput(image)),
           actionButton("#i-copy", "复制", "复制图片", () => copyImage(image)),
           actionButton("#i-download", "下载", "下载图片", () => downloadImage(image)),
           actionButton("#i-trash", "删除", "删除", () => deleteImage(image.id), "danger-text"),
@@ -2609,6 +2718,7 @@
           clearReferenceIdFromAttachments(existing.id);
           await deleteImage(existing.id, { silent: true });
           renderAttachments();
+          saveCurrentDraft();
           toast("已取消保存参考图");
           return;
         }
@@ -2639,6 +2749,7 @@
         state.gallery.unshift(entry);
         await saveImage(entry);
         renderAttachments();
+        saveCurrentDraft();
         renderReferenceGallery();
         renderGallery();
         renderAllGallery();
@@ -2784,20 +2895,9 @@
       }
 
       async function useImageAsInput(image) {
-        state.attachments = [{
-          id: uid("input"),
-          name: image.name || "generated-image.png",
-          type: image.mime || "image/png",
-          size: dataUrlByteLength(image.dataUrl),
-          dataUrl: image.dataUrl,
-          savedReferenceId: isReferenceImage(image) ? image.id : "",
-        }];
-        state.mode = "edit";
-        updateMode();
-        renderAttachments();
-        updateRequestPreview();
+        appendComposerAttachments([image], { silent: true });
         els.prompt.focus({ preventScroll: true });
-        toast("已作为下一次请求的唯一输入图片");
+        toast("已追加到参考图");
       }
 
       async function copyImage(image) {
@@ -3075,7 +3175,7 @@
         const sessionId = images[0] && images[0].sessionId;
         const session = state.sessions.find((entry) => entry.id === sessionId) || getActiveSession();
         return {
-          session: session ? { ...session, folderName: ensureSessionFolderName(session) } : null,
+          session: session ? { ...sessionForStorage(session), folderName: ensureSessionFolderName(session) } : null,
           exportedAt: new Date().toISOString(),
           turns: state.turns
             .filter((turn) => turn.sessionId === (session && session.id))
