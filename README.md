@@ -1,6 +1,6 @@
 # Image Workbench
 
-Single-page image generation/editing workbench. The frontend is a static Cloudflare Pages site, and all long-running image jobs are handled by a long-lived Node.js backend on GCP.
+Single-page image generation/editing workbench. The frontend is a static Cloudflare Pages site, and all long-running image jobs are handled by a long-lived Node.js backend.
 
 ## Runtime Architecture
 
@@ -12,11 +12,11 @@ Browser SPA
   `-- calls https://imagebackend.78139191.xyz
         |
         |-- Node.js backend, PM2 process: image-workbench-backend
-        |-- reverse proxy -> 127.0.0.1:3456 on the GCP host
+        |-- reverse proxy -> 127.0.0.1:6666 on the backend host
         |
         |-- calls the configured model API for image generation/editing
         |-- calls Cloudflare D1 through the Cloudflare REST API
-        `-- stores generated image assets on local GCP disk
+        `-- stores generated image assets on local backend host disk
 ```
 
 Important boundaries:
@@ -71,7 +71,7 @@ pages_build_output_dir = "dist"
 
 The frontend backend URL is hardcoded in `app.js`:
 
-- `localhost` / `127.0.0.1`: `http://127.0.0.1:3456`
+- `localhost` / `127.0.0.1`: `http://127.0.0.1:6666`
 - production: `https://imagebackend.78139191.xyz`
 
 If API URL and API Key are left blank in the browser, the Node backend uses server-side environment defaults. Browser-filled values override those defaults for that request.
@@ -96,10 +96,10 @@ The production PM2 process is named:
 image-workbench-backend
 ```
 
-The backend listens on `127.0.0.1:3456`. The server reverse proxy should terminate SSL and forward:
+The backend listens on `127.0.0.1:6666`. The server reverse proxy should terminate SSL and forward:
 
 ```text
-https://imagebackend.78139191.xyz -> 127.0.0.1:3456
+https://imagebackend.78139191.xyz -> 127.0.0.1:6666
 ```
 
 Run directly:
@@ -121,10 +121,10 @@ Production health check:
 curl -sS https://imagebackend.78139191.xyz/health
 ```
 
-Production PM2 check on the GCP host:
+Production PM2 check on the backend host:
 
 ```bash
-ssh gcp 'pm2 status image-workbench-backend --no-color'
+ssh my-server 'pm2 status image-workbench-backend --no-color'
 ```
 
 ## Environment
@@ -135,7 +135,7 @@ Required runtime variables:
 
 ```bash
 HOST=127.0.0.1
-PORT=3456
+PORT=6666
 PUBLIC_BASE_URL=https://imagebackend.78139191.xyz
 
 BASEURL=...
@@ -329,10 +329,12 @@ Frontend deploy:
 npm run deploy
 ```
 
-Backend deploy is intentionally separate from Cloudflare Pages. Update the code on the GCP host, then restart PM2 from the backend project directory:
+Backend deploy is intentionally separate from Cloudflare Pages. The current backend host is the `my-server` SSH target, running from `/root/image-workbench` on `127.0.0.1:6666`.
+
+Update the code on the backend host, then restart PM2 from the backend project directory:
 
 ```bash
-ssh gcp 'cd /home/ubuntu/image-workbench && node --check backend/server.mjs && pm2 restart image-workbench-backend --update-env'
+ssh my-server 'cd /root/image-workbench && node --check backend/server.mjs && pm2 restart image-workbench-backend --update-env'
 ```
 
 Check backend health after restart:
@@ -344,8 +346,10 @@ curl -sS https://imagebackend.78139191.xyz/health
 Check PM2 logs if requests fail:
 
 ```bash
-ssh gcp 'pm2 logs image-workbench-backend --lines 120 --nostream'
+ssh my-server 'pm2 logs image-workbench-backend --lines 120 --nostream'
 ```
+
+When migrating the backend to another server, update the Cloudflare API Token client IP allowlist before running migrations or starting the backend. The backend uses that token to call D1 through the Cloudflare REST API, so Cloudflare must allow the new server's outbound IP address. If the host has IPv6, either add both the IPv4 and IPv6 outbound addresses or keep `NODE_OPTIONS=--dns-result-order=ipv4first` aligned with the allowed IPv4 address.
 
 Docs-only changes do not require a Pages deploy or backend restart.
 
